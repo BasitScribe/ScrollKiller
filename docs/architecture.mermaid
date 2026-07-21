@@ -1,0 +1,61 @@
+flowchart TB
+    subgraph DEVICE["📱 ANDROID DEVICE (all detection on-device)"]
+        IG["Instagram / YT / Snap<br/>(target apps)"]
+        AS["AccessibilityService<br/>detects reel swipes<br/>(pkg + view-tree filter)"]
+        CH["Challenge Engine<br/>steps / jump / face-down /<br/>forehead / fake-scroll<br/>(sensors: step, accel, proximity)"]
+        OV["Overlay Manager<br/>SYSTEM_ALERT_WINDOW<br/>block screen + guilt lines"]
+        GP["guilt_pack.json<br/>(weighted random,<br/>remote-updatable)"]
+        DB["Room (SQLite)<br/>counts, streaks, settings<br/>OFFLINE-FIRST source of truth"]
+        SQ["Sync Queue<br/>delta batches, batch_id (UUID)<br/>flush every 60s / on Wi-Fi"]
+        IG -->|scroll events| AS
+        AS -->|increment| DB
+        AS -->|limit hit| OV
+        OV --> CH
+        GP --> OV
+        CH -->|pass| OV
+        DB --> SQ
+    end
+
+    subgraph IOS["🍎 iOS DEVICE (later phase)"]
+        SC["Shortcuts Automation<br/>app-open → deep link"]
+        ICH["Challenge Screens<br/>CoreMotion sensors"]
+        SC --> ICH
+    end
+
+    subgraph API["☁️ BACKEND — FastAPI (Render/Fly free tier)"]
+        AUTH["Auth Service<br/>verify Google id_token →<br/>issue own JWT + refresh"]
+        SYNC["Sync Endpoint<br/>idempotent delta ingest<br/>dedupe by batch_id"]
+        LB["Leaderboard Service<br/>battles, friend ranks<br/>30s cached reads"]
+        AGG["Nightly Aggregator (cron)<br/>roll events → daily_counts<br/>prune raw events >7d<br/>user-timezone day boundary"]
+    end
+
+    subgraph DATA["🗄️ DATA LAYER (free tiers)"]
+        PG[("Postgres — Neon/Supabase<br/>users · daily_counts ·<br/>friendships · sync_batches ·<br/>devices · sessions<br/>(via pgbouncer pool)")]
+        RD[("Redis — Upstash<br/>ZSET leaderboards per<br/>friend-group per day")]
+    end
+
+    subgraph EXT["🌐 EXTERNAL"]
+        GO["Google OAuth"]
+        FCM["Firebase Cloud Messaging<br/>'Rahul passed you 💀'"]
+    end
+
+    subgraph CICD["⚙️ CI/CD"]
+        GH["GitHub repo"]
+        GA["GitHub Actions<br/>PRIMARY: Android build+test,<br/>macOS runner for iOS skeleton"]
+        JK["Stretch: ephemeral Jenkins<br/>webhook → Lambda → EC2 start<br/>build → S3 → auto-stop"]
+        GH --> GA
+        GH -.learning track.-> JK
+        GA -->|APK artifact| REL["GitHub Releases<br/>(pre–Play Store distribution)"]
+    end
+
+    SQ -->|HTTPS batch POST| SYNC
+    ICH -.later.-> SYNC
+    AUTH <--> GO
+    SYNC --> PG
+    SYNC -->|update ZSET| RD
+    LB --> RD
+    LB --> PG
+    AGG --> PG
+    LB -->|rank change| FCM
+    FCM -->|push| DEVICE
+    DEVICE -->|login| AUTH
