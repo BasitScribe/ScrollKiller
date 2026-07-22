@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Dark-mode variant of the base XML theme. Android automatically picks this
+     folder (-night) when the device is in dark mode. -->
+<resources>
+    <style name="Theme.ScrollKiller" parent="android:Theme.Material.NoActionBar" />
+</resources>

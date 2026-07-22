@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Full-screen block screen shown over the reel surface once the daily limit is hit.
+    Deliberately, unmistakably ScrollKiller's OWN screen — it does not mimic Instagram
+    or system chrome (Play policy / never-deceive). Fixed dark colors because it draws
+    over another app, outside our Compose theme (same rationale as overlay_bubble_bg).
+    The user is never trapped: Exit leaves the app and Back maps to Exit.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/block_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#F20D0D0D"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="32dp"
+    android:focusable="true"
+    android:focusableInTouchMode="true">
+
+    <TextView
+        android:id="@+id/block_skull"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="💀"
+        android:textSize="96sp" />
+
+    <TextView
+        android:id="@+id/block_title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="@string/block_title"
+        android:textColor="#FFFFFFFF"
+        android:textSize="28sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/block_guilt"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:gravity="center"
+        android:textColor="#CCFFFFFF"
+        android:textSize="16sp"
+        tools:ignore="HardcodedText"
+        xmlns:tools="http://schemas.android.com/tools" />
+
+    <Button
+        android:id="@+id/block_unlock"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="40dp"
+        android:text="@string/block_unlock" />
+
+    <Button
+        android:id="@+id/block_exit"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="@string/block_exit" />
+
+</LinearLayout>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Declares what to include/exclude in Android's Auto Backup (pre-Android 12).
+    Referenced by android:fullBackupContent in the manifest. Empty = default
+    backup behavior. See:
+    https://developer.android.com/guide/topics/data/autobackup
+-->
+<full-backup-content>
+</full-backup-content>

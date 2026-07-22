@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The manifest declares the app to Android: its Application class, icon,
+    theme, and which Activity is the launcher entry point.
+
+    Permissions:
+    - SYSTEM_ALERT_WINDOW: draw the floating live-counter bubble on top of the
+      tracked app. It is OPTIONAL — the bubble is a convenience; detection and
+      the in-app counter work without it. Granting it is a user-driven flow
+      (Settings.ACTION_MANAGE_OVERLAY_PERMISSION), gated by the second onboarding
+      step; the service no-ops the bubble when Settings.canDrawOverlays is false.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <application
+        android:name=".ScrollKillerApp"
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.ScrollKiller"
+        tools:targetApi="31">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.ScrollKiller">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+            AccessibilityService that detects Instagram reel scrolls.
+
+            - permission BIND_ACCESSIBILITY_SERVICE: required by the system so
+              only the OS can bind this service.
+            - exported=true: the system (a different process) binds it, so it
+              must be exported.
+            - intent-filter action AccessibilityService: how the OS discovers
+              services that can be enabled in Settings > Accessibility.
+            - meta-data android.accessibilityservice: points at the config XML
+              declaring which events/packages we observe.
+        -->
+        <service
+            android:name=".service.ReelScrollAccessibilityService"
+            android:exported="true"
+            android:label="@string/accessibility_service_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+    </application>
+
+</manifest>

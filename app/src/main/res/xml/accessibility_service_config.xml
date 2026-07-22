@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Runtime configuration for ReelScrollAccessibilityService. The framework reads
+    this when the user enables the service in Settings > Accessibility.
+
+    - accessibilityEventTypes: view-scrolled (reel-advance detection),
+      window-state-changed (foreground-app changes), AND window-content-changed.
+      window-state-changed is what lets the floating counter bubble show on
+      entering a tracked app and HIDE on leaving it — the "leaving" event belongs
+      to the destination app, so we must observe window changes across all
+      packages, not just Instagram's. window-content-changed is added for surface
+      gating: entering/leaving the Reels surface WITHIN Instagram is a fragment
+      swap that doesn't always fire window-state-changed, so we also re-evaluate
+      the doom surface on content changes. It is high-frequency — verbose logging
+      is DEBUG-gated and the runtime handler acts only on a surface-state change.
+    - packageNames: intentionally OMITTED (all packages). Removing it is required
+      for the show/hide-on-leave logic above: a window-state-changed for the app
+      the user switches TO only arrives if we're not scoped to Instagram. We do
+      NOT read content from other apps — untracked scroll events are dropped
+      immediately by PlatformRegistry.forPackage(), and window-state-changed
+      carries only the foreground package/class name (no screen text). The code
+      gate (PlatformRegistry) is now the sole allowlist; there is no XML mirror.
+    - feedbackType: we give no user feedback; we silently observe.
+    - notificationTimeout: 100ms debounce so rapid scroll bursts don't flood us.
+    - canRetrieveWindowContent: needed to read scroll indices/class names from
+      the node tree. Justified in the Play disclosure dialog (invariant #5).
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeViewScrolled|typeWindowStateChanged|typeWindowContentChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagReportViewIds"
+    android:canRetrieveWindowContent="true"
+    android:description="@string/accessibility_service_description"
+    android:notificationTimeout="100"
+    android:summary="@string/accessibility_service_description" />

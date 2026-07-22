@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Android 12+ replacement for backup_rules: controls what data is included in
+    cloud backups and device-to-device transfers. Referenced by
+    android:dataExtractionRules in the manifest. Empty = default behavior. See:
+    https://developer.android.com/about/versions/12/backup-restore
+-->
+<data-extraction-rules>
+    <cloud-backup>
+    </cloud-backup>
+</data-extraction-rules>

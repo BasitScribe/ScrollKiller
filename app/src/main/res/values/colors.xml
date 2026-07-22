@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- XML-side colors used by themes.xml (the base Android theme applied before
+     Compose draws). Compose has its own palette in ui/theme/Color.kt. -->
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+</resources>

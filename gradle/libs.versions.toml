@@ -1,0 +1,59 @@
+# VERSION CATALOG — the single source of truth for dependency versions.
+#
+# Three sections:
+#   [versions] — a name -> version-number map. Change a number here to upgrade.
+#   [libraries] — the actual libraries, each pointing at a [versions] entry.
+#                 In build.gradle.kts you write e.g. libs.androidx.core.ktx
+#                 (dots in the alias become the `.` path).
+#   [plugins]  — Gradle plugins, referenced as libs.plugins.<name>.
+#
+# Why bother: upgrading a library is a one-line edit here instead of hunting
+# through every module's build file.
+
+[versions]
+agp = "9.3.0"                    # Android Gradle Plugin
+kotlin = "2.2.10"                # Kotlin language + Compose compiler plugin
+coreKtx = "1.15.0"              # androidx.core Kotlin extensions
+lifecycleRuntimeKtx = "2.8.7"  # lifecycle-aware coroutine scopes
+activityCompose = "1.9.3"      # bridges Activity <-> Compose (setContent)
+composeBom = "2024.12.01"      # Bill of Materials: aligns all Compose lib versions
+junit = "4.13.2"               # local (JVM) unit tests
+androidxJunit = "1.2.1"        # instrumented-test JUnit runner
+espressoCore = "3.6.1"         # instrumented UI test framework
+ksp = "2.3.2"          # Kotlin Symbol Processing (Room codegen); tracks Kotlin version
+room = "2.7.1"                 # on-device SQLite persistence (2.7.0+ required for KSP2)
+
+[libraries]
+androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycleRuntimeKtx" }
+androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
+# Bridges ViewModel <-> Compose (the viewModel() composable). Versioned with lifecycle.
+androidx-lifecycle-viewmodel-compose = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "lifecycleRuntimeKtx" }
+
+# Room: on-device SQLite. room-compiler is the KSP annotation processor.
+androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
+androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
+androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
+
+# The Compose BOM: import it, then declare the Compose artifacts below WITHOUT
+# versions — the BOM pins a mutually-compatible set for you.
+androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
+androidx-ui = { group = "androidx.compose.ui", name = "ui" }
+androidx-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
+androidx-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
+androidx-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
+androidx-material3 = { group = "androidx.compose.material3", name = "material3" }
+
+junit = { group = "junit", name = "junit", version.ref = "junit" }
+androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxJunit" }
+androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
+androidx-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
+androidx-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+# Since Kotlin 2.0 the Compose compiler ships as its own plugin, versioned with Kotlin.
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+# KSP runs Room's annotation processor to generate DAO/DB implementations at build time.
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }

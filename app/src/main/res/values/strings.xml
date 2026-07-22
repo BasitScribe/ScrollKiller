@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- User-facing text lives here, not hard-coded in Kotlin (Android convention;
+     makes translation and reuse possible). -->
+<resources>
+    <string name="app_name">ScrollKiller</string>
+
+    <!-- Accessibility service label + description. Shown to the user in
+         Settings > Accessibility, so keep them plain and honest (Play policy).
+         The description is what the system shows under the toggle, so it must
+         explain what the service reads and reassure that nothing leaves the phone. -->
+    <string name="accessibility_service_label">ScrollKiller Detector</string>
+    <string name="accessibility_service_description">Counts how many reels/short videos you scroll so ScrollKiller can show your daily total. It reads only scroll events in short-video feeds and which app is currently in the foreground (so the counter bubble can appear over that app and hide when you leave it) — never the videos, captions, messages, or anything you view. Nothing you look at ever leaves your phone.</string>
+
+    <!-- Disclosure screen (shown BEFORE we send the user to Settings — invariant #5). -->
+    <string name="disclosure_title">One permission to count your scrolling</string>
+    <string name="disclosure_what_title">What it does</string>
+    <string name="disclosure_what_body">ScrollKiller uses an Accessibility Service to notice when you swipe through reels and short videos, so it can count them.</string>
+    <string name="disclosure_privacy_title">What stays private</string>
+    <string name="disclosure_privacy_body">It reads only scroll events — the swipe itself. It never reads the videos, captions, messages, passwords, or anything else on your screen. Nothing you view ever leaves your phone; only your daily counts are stored.</string>
+    <string name="disclosure_why_title">Why it\'s needed</string>
+    <string name="disclosure_why_body">Android has no other way for an app to know you\'re doomscrolling in another app. This is the permission that makes the counter — and the blocking — possible.</string>
+    <string name="disclosure_enable_button">Enable in Settings</string>
+
+    <!-- Instruction card shown after tapping Enable, to guide the manual toggle. -->
+    <string name="onboarding_instruction_title">In the next screen</string>
+    <string name="onboarding_instruction_body">Find \"ScrollKiller Detector\" in the list, open it, and turn the toggle On. Then press Back to return here.</string>
+
+    <!-- Home screen live counter. -->
+    <string name="home_counter_label">reels scrolled today</string>
+
+    <!-- Overlay permission screen (second onboarding step — OPTIONAL, skippable). -->
+    <string name="overlay_title">See your count without leaving the app</string>
+    <string name="overlay_body">Let ScrollKiller float a tiny bubble — a brain and your live count — on top of reels while you scroll. You watch the number climb without opening ScrollKiller. It shows only inside tracked short-video apps and disappears everywhere else. This is optional: counting still works without it.</string>
+    <string name="overlay_instruction_title">In the next screen</string>
+    <string name="overlay_instruction_body">Turn on \"Allow display over other apps\" for ScrollKiller, then press Back to return here.</string>
+    <string name="overlay_enable_button">Allow the bubble</string>
+    <string name="overlay_skip_button">Not now</string>
+    <!-- Brain-state labels shown on Home under the count (see com.scrollkiller.brain.BrainState). -->
+    <string name="brain_state_healthy">Healthy</string>
+    <string name="brain_state_cracking">Cracking</string>
+    <string name="brain_state_fried">Fried</string>
+
+    <!-- Full-screen block screen (Phase 2). Clearly ScrollKiller's own UI. -->
+    <string name="block_title">Reels are Locked</string>
+    <string name="block_exit">Exit</string>
+    <string name="block_unlock">Unlock</string>
+    <!-- Guilt lines: one is picked at show time. TEMPORARY: the guilt_pack.json loader
+         (its own Phase-2 checkbox) with weighted no-repeat rotation replaces this array. -->
+    <string-array name="block_guilt_lines">
+        <item>You\'ve hit your limit. Your brain will thank you.</item>
+        <item>That\'s enough reels for today. Go touch grass.</item>
+        <item>The feed will still be there tomorrow. Your time won\'t.</item>
+        <item>You came here to relax, not to disappear. Take a break.</item>
+    </string-array>
+</resources>

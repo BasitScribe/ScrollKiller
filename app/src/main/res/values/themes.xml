@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The base Android (XML) theme, applied by the manifest. This is what paints
+    the window BEFORE Compose renders (initial background, no action bar). Once
+    Compose draws, ScrollKillerTheme (Kotlin) controls all the real styling.
+
+    A matching dark variant lives in values-night/themes.xml.
+    Uses framework themes so we don't need the extra Material Components library.
+-->
+<resources>
+    <style name="Theme.ScrollKiller" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>
