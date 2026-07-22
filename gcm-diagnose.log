@@ -1,0 +1,207 @@
+﻿Diagnose log at 2026-07-21T14:20:28Z
+
+AppPath: C:\Program Files\Git\mingw64\bin\git-credential-manager.exe
+InstallDir: C:\Program Files\Git\mingw64\bin\
+Version: 2.7.3+5fa7116896c82164996a609accd1c5ad90fe730a
+
+------------
+Diagnostic: Environment
+Skipped: False
+Success: True
+Exception: None
+Log:
+OSType: Windows
+OSVersion: 10.0 (build 26200)
+Reading environment variables... OK
+ Variables:
+SESSIONNAME=Console
+ProgramFiles(x86)=C:\Program Files (x86)
+MSYSTEM=MINGW64
+ProgramW6432=C:\Program Files
+windir=C:\WINDOWS
+VSCODE_PROCESS_TITLE=extension-host (agent-exec) ScrollKiller [3-14]
+PROCESSOR_IDENTIFIER=Intel64 Family 6 Model 183 Stepping 1, GenuineIntel
+EFC_7192_2283032206=1
+CURSOR_CONVERSATION_ID=082f8cd2-8125-4835-9100-be64c31f3e50
+Path=C:/Program Files/Git/mingw64/libexec/git-core;C:\Program Files\Git\mingw64\bin;C:\Program Files\Git\usr\bin;C:\Users\AbdulbasitShaikh\bin;c:\Users\AbdulbasitShaikh\AppData\Local\Programs\cursor\resources\app\node_modules\@vscode\ripgrep\bin;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\Git\cmd;C:\Program Files\nodejs\;C:\Program Files\Cloudflare\Cloudflare WARP\;C:\Program Files\Docker\Docker\resources\bin;C:\Users\AbdulbasitShaikh\AppData\Local\Microsoft\WindowsApps;C:\Users\AbdulbasitShaikh\AppData\Local\Programs\cursor\resources\app\bin;C:\Users\AbdulbasitShaikh\AppData\Local\Python\bin;C:\Users\AbdulbasitShaikh\AppData\Local\GitHubDesktop\bin;C:\Users\AbdulbasitShaikh\AppData\Local\Programs\Microsoft VS Code\bin;C:\Users\AbdulbasitShaikh\AppData\Local\Programs\Antigravity\bin;C:\Users\AbdulbasitShaikh\AppData\Local\Programs\Antigravity IDE\bin;C:\Users\AbdulbasitShaikh\AppData\Roaming\npm
+EFC_7192_2775293581=1
+VSCODE_ESM_ENTRYPOINT=vs/workbench/api/node/extensionHostProcess
+VSCODE_CWD=C:\Users\AbdulbasitShaikh\AppData\Local\Programs\cursor
+USERPROFILE=C:\Users\AbdulbasitShaikh
+_ZO_DOCTOR=0
+PROCESSOR_REVISION=b701
+__CURSOR_SANDBOX_ENV_RESTORE=builtin unset CURSOR_CONVERSATION_ID CURSOR_AGENT_STORE_FILES_DIR CURSOR_AGENT_STORE_SHARED_PATHS 2>/dev/null || true; builtin export CURSOR_CONVERSATION_ID='082f8cd2-8125-4835-9100-be64c31f3e50'
+TEMP=C:\Users\ABDULB~1\AppData\Local\Temp
+FPS_BROWSER_APP_PROFILE_STRING=Internet Explorer
+FPS_BROWSER_USER_PROFILE_STRING=Default
+LOGONSERVER=\\ABDUL-BASIT
+TERM=dumb
+NO_COLOR=1
+SystemRoot=C:\WINDOWS
+CHROME_CRASHPAD_PIPE_NAME=\\.\pipe\crashpad_2640_ROITANFFVDSQKYKA
+GIT_EXEC_PATH=C:/Program Files/Git/mingw64/libexec/git-core
+CURSOR_EXTENSION_HOST_ROLE=agent-exec
+PLINK_PROTOCOL=ssh
+OneDrive=C:\Users\AbdulbasitShaikh\OneDrive - Arysoft Directory
+CURSOR_LAYOUT=unifiedAgent
+EFC_7192_4126798990=1
+CommonProgramFiles=C:\Program Files\Common Files
+CURSOR_AGENT=1
+PROCESSOR_LEVEL=6
+ProgramData=C:\ProgramData
+LC_CTYPE=C.UTF-8
+HOMEPATH=\Users\AbdulbasitShaikh
+FORCE_COLOR=0
+VSCODE_HANDLES_UNCAUGHT_ERRORS=true
+ALLUSERSPROFILE=C:\ProgramData
+CommonProgramW6432=C:\Program Files\Common Files
+USERNAME=AbdulbasitShaikh
+OneDriveCommercial=C:\Users\AbdulbasitShaikh\OneDrive - Arysoft Directory
+TMP=C:\Users\ABDULB~1\AppData\Local\Temp
+CURSOR_WORKSPACE_LABEL=ScrollKiller
+EFC_7192_1262719628=1
+PROCESSOR_ARCHITECTURE=AMD64
+AGENT_TRANSCRIPTS=C:\Users\AbdulbasitShaikh\.cursor\projects\d-ScrollKiller\agent-transcripts
+DriverData=C:\Windows\System32\Drivers\DriverData
+HOMEDRIVE=C:
+VSCODE_PID=2640
+VSCODE_CRASH_REPORTER_PROCESS_TYPE=extensionHost
+GIT_TRACE2_PARENT_SID=7bc056c9-0634-4170-839c-3648dc94cdc8
+SystemDrive=C:
+NUMBER_OF_PROCESSORS=28
+OS=Windows_NT
+EFC_7192_3789132940=1
+ZES_ENABLE_SYSMAN=1
+ProgramFiles=C:\Program Files
+ComSpec=C:\WINDOWS\system32\cmd.exe
+USERDOMAIN_ROAMINGPROFILE=AzureAD
+PATHEXT=.COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC;.CPL
+HOME=C:\Users\AbdulbasitShaikh
+VSCODE_IPC_HOOK=\\.\pipe\81e476e1-3.12.17-main-sock
+PSModulePath=C:\Users\AbdulbasitShaikh\OneDrive - Arysoft Directory\Desktop\Documents\WindowsPowerShell\Modules;C:\Program Files\WindowsPowerShell\Modules;C:\WINDOWS\system32\WindowsPowerShell\v1.0\Modules
+TMPDIR=C:\Users\ABDULB~1\AppData\Local\Temp
+APPDATA=C:\Users\AbdulbasitShaikh\AppData\Roaming
+USERDOMAIN=AzureAD
+COMPUTERNAME=ABDUL-BASIT
+LOCALAPPDATA=C:\Users\AbdulbasitShaikh\AppData\Local
+VSCODE_NLS_CONFIG={"userLocale":"en-us","osLocale":"en-in","resolvedLanguage":"en","defaultMessagesFile":"C:\\Users\\AbdulbasitShaikh\\AppData\\Local\\Programs\\cursor\\resources\\app\\out\\nls.messages.json","locale":"en-us","availableLanguages":{}}
+CURSOR_RIPGREP_PATH=c:\Users\AbdulbasitShaikh\AppData\Local\Programs\cursor\resources\app\node_modules\@vscode\ripgrep\bin\rg.exe
+PSExecutionPolicyPreference=Bypass
+CommonProgramFiles(x86)=C:\Program Files (x86)\Common Files
+EFC_7192_1592913036=1
+VSCODE_CODE_CACHE_PATH=C:\Users\AbdulbasitShaikh\AppData\Roaming\Cursor\CachedData\0fb762053c34788bb7760d5673f8a6d4c8589d50
+PUBLIC=C:\Users\Public
+
+
+------------
+Diagnostic: File system
+Skipped: False
+Success: True
+Exception: None
+Log:
+Temporary directory is 'C:\Users\AbdulbasitShaikh\AppData\Local\Temp\'...
+Checking basic file I/O...
+Writing to temporary file 'C:\Users\AbdulbasitShaikh\AppData\Local\Temp\b93649c5be55e002bd9a6f7b'... OK
+Reading from temporary file 'C:\Users\AbdulbasitShaikh\AppData\Local\Temp\b93649c5be55e002bd9a6f7b'... OK
+Deleting temporary file 'C:\Users\AbdulbasitShaikh\AppData\Local\Temp\b93649c5be55e002bd9a6f7b'... OK
+Testing IFileSystem instance...
+UserHomePath: C:\Users\AbdulbasitShaikh
+UserDataDirectoryPath: C:\Users\AbdulbasitShaikh\.gcm
+GetCurrentDirectory(): D:\ScrollKiller
+
+------------
+Diagnostic: Networking
+Skipped: False
+Success: False
+Exception:
+System.Net.Http.HttpRequestException: An error occurred while sending the request. ---> System.Net.WebException: The remote name could not be resolved: 'example.com'
+   at System.Net.HttpWebRequest.EndGetResponse(IAsyncResult asyncResult)
+   at System.Net.Http.HttpClientHandler.GetResponseCallback(IAsyncResult ar)
+   --- End of inner exception stack trace ---
+   at System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()
+   at System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   at GitCredentialManager.Diagnostics.NetworkingDiagnostic.<RunInternalAsync>d__4.MoveNext()
+--- End of stack trace from previous location where exception was thrown ---
+   at System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()
+   at System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   at GitCredentialManager.Diagnostics.Diagnostic.<RunAsync>d__6.MoveNext()
+Log:
+Checking networking and HTTP stack...
+Creating HTTP client... OK
+IsNetworkAvailable: True
+Sending HEAD request to http://example.com...Sending HEAD request to https://example.com... warning: HEAD request failed
+Sending HEAD request to http://httpforever.com...
+------------
+Diagnostic: Git
+Skipped: False
+Success: True
+Exception: None
+Log:
+Getting Git version... OK
+Git version is '2.53.0.windows.2'
+Locating current repository...Git repository at 'D:/ScrollKiller/.git'
+ OK
+Listing all Git configuration... OK
+Git configuration:
+file:C:/Program Files/Git/etc/gitconfig	diff.astextplain.textconv=astextplain
+file:C:/Program Files/Git/etc/gitconfig	filter.lfs.clean=git-lfs clean -- %f
+file:C:/Program Files/Git/etc/gitconfig	filter.lfs.smudge=git-lfs smudge -- %f
+file:C:/Program Files/Git/etc/gitconfig	filter.lfs.process=git-lfs filter-process
+file:C:/Program Files/Git/etc/gitconfig	filter.lfs.required=true
+file:C:/Program Files/Git/etc/gitconfig	http.sslbackend=schannel
+file:C:/Program Files/Git/etc/gitconfig	core.autocrlf=true
+file:C:/Program Files/Git/etc/gitconfig	core.fscache=true
+file:C:/Program Files/Git/etc/gitconfig	core.symlinks=false
+file:C:/Program Files/Git/etc/gitconfig	pull.rebase=false
+file:C:/Program Files/Git/etc/gitconfig	credential.helper=manager
+file:C:/Program Files/Git/etc/gitconfig	credential.https://dev.azure.com.usehttppath=true
+file:C:/Program Files/Git/etc/gitconfig	init.defaultbranch=master
+file:C:/Users/AbdulbasitShaikh/.gitconfig	filter.lfs.clean=git-lfs clean -- %f
+file:C:/Users/AbdulbasitShaikh/.gitconfig	filter.lfs.smudge=git-lfs smudge -- %f
+file:C:/Users/AbdulbasitShaikh/.gitconfig	filter.lfs.process=git-lfs filter-process
+file:C:/Users/AbdulbasitShaikh/.gitconfig	filter.lfs.required=true
+file:C:/Users/AbdulbasitShaikh/.gitconfig	safe.directory=D:/Documents/Deployment-update/xjoins-backend-refactor
+file:C:/Users/AbdulbasitShaikh/.gitconfig	safe.directory=D:/Documents/Deployment-update/etl-frontend/
+file:C:/Users/AbdulbasitShaikh/.gitconfig	safe.directory=D:/Documents/Deployment-update/TMS/xjoins-ticket-backend
+file:C:/Users/AbdulbasitShaikh/.gitconfig	safe.directory=D:/Documents/Deployment-update/TMS/xjoins-ticket-frontend
+file:C:/Users/AbdulbasitShaikh/.gitconfig	safe.directory=D:/Documents/Deployment-update/TMS/xjoins-ticket-frontend
+file:C:/Users/AbdulbasitShaikh/.gitconfig	safe.directory=D:/Documents/Deployment-update/xjoins-ops-backend
+file:C:/Users/AbdulbasitShaikh/.gitconfig	safe.directory=D:/Documents/Deployment-update/xjoins-ops-frontend
+file:C:/Users/AbdulbasitShaikh/.gitconfig	safe.directory=D:/Documents/Deployment-update
+file:C:/Users/AbdulbasitShaikh/.gitconfig	user.name=BasitScribe
+file:.git/config	core.repositoryformatversion=0
+file:.git/config	core.filemode=false
+file:.git/config	core.bare=false
+file:.git/config	core.logallrefupdates=true
+file:.git/config	core.symlinks=false
+file:.git/config	core.ignorecase=true
+file:.git/config	remote.origin.url=https://github.com/BasitScribe/ScrollKiller.git
+file:.git/config	remote.origin.fetch=+refs/heads/*:refs/remotes/origin/*
+
+
+------------
+Diagnostic: Credential storage
+Skipped: False
+Success: True
+Exception: None
+Log:
+ICredentialStore instance is of type: CredentialStore
+Writing test credential... OK
+Reading test credential... OK
+Deleting test credential... OK
+
+------------
+Diagnostic: Microsoft authentication (AAD/MSA)
+Skipped: False
+Success: True
+Exception: None
+Log:
+Broker is not enabled.
+Flow type is: Auto
+Gathering MSAL token cache data... OK
+CacheDirectory: C:\Users\AbdulbasitShaikh\AppData\Local\.IdentityService
+CacheFileName: msal.cache
+CacheFilePath: C:\Users\AbdulbasitShaikh\AppData\Local\.IdentityService\msal.cache
+Creating cache helper... OK
+Verifying MSAL token cache persistence... OK
+
