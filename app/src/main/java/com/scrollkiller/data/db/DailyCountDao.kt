@@ -32,4 +32,16 @@ interface DailyCountDao {
      */
     @Query("SELECT COALESCE(SUM(count), 0) FROM daily_counts WHERE date = :date AND platform = :platform")
     fun observeCountForDatePlatform(date: String, platform: String): Flow<Int>
+
+    /**
+     * Live per-platform rows for one date, highest count first. Powers the Apps/Today
+     * dashboard breakdown. Only platforms with at least one advance today appear (a row
+     * is created lazily on first increment), so the UI fills in the rest from the registry.
+     */
+    @Query("SELECT * FROM daily_counts WHERE date = :date ORDER BY count DESC")
+    fun observeCountsForDate(date: String): Flow<List<DailyCountEntity>>
+
+    /** Wipe all aggregate counts (Settings → Clear data). */
+    @Query("DELETE FROM daily_counts")
+    suspend fun deleteAll()
 }

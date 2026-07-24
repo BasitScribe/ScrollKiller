@@ -28,6 +28,33 @@
     <!-- Home screen live counter. -->
     <string name="home_counter_label">reels scrolled today</string>
 
+    <!-- Dashboard bottom-nav tabs (Phase 2). -->
+    <string name="tab_today">Today</string>
+    <string name="tab_apps">Apps</string>
+    <string name="tab_settings">Settings</string>
+
+    <!-- Today tab. %1$s is a minutes value like "4.8". -->
+    <string name="today_time_estimate">~%1$s mins scrolling today</string>
+    <string name="today_breakdown_title">By app</string>
+
+    <!-- Apps tab. -->
+    <string name="apps_title">Apps</string>
+
+    <!-- Settings tab. -->
+    <string name="settings_status_on">On</string>
+    <string name="settings_status_off">Off</string>
+    <string name="settings_manage">Manage</string>
+    <string name="settings_accessibility_title">Detection service</string>
+    <string name="settings_overlay_title">Display over other apps</string>
+    <string name="settings_bubble_title">Floating counter bubble</string>
+    <string name="settings_bubble_subtitle">Show your live count over reels while you scroll</string>
+    <string name="settings_clear_title">Clear all data</string>
+    <string name="settings_clear_subtitle">Delete every stored count on this device</string>
+    <string name="settings_clear_button">Clear</string>
+    <string name="settings_cancel">Cancel</string>
+    <string name="settings_clear_confirm_title">Clear all data?</string>
+    <string name="settings_clear_confirm_body">This deletes all your scroll counts on this device. It can\'t be undone.</string>
+
     <!-- Overlay permission screen (second onboarding step — OPTIONAL, skippable). -->
     <string name="overlay_title">See your count without leaving the app</string>
     <string name="overlay_body">Let ScrollKiller float a tiny bubble — a brain and your live count — on top of reels while you scroll. You watch the number climb without opening ScrollKiller. It shows only inside tracked short-video apps and disappears everywhere else. This is optional: counting still works without it.</string>

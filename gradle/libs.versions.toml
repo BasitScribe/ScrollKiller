@@ -11,7 +11,7 @@
 # through every module's build file.
 
 [versions]
-agp = "9.3.0"                    # Android Gradle Plugin
+agp = "9.3.1"                    # Android Gradle Plugin
 kotlin = "2.2.10"                # Kotlin language + Compose compiler plugin
 coreKtx = "1.15.0"              # androidx.core Kotlin extensions
 lifecycleRuntimeKtx = "2.8.7"  # lifecycle-aware coroutine scopes

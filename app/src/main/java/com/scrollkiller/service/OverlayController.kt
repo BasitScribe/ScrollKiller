@@ -16,6 +16,7 @@ import com.scrollkiller.MainActivity
 import com.scrollkiller.R
 import com.scrollkiller.brain.BrainState
 import com.scrollkiller.data.CountRepository
+import com.scrollkiller.data.SettingsPrefs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -42,9 +43,17 @@ import kotlin.math.abs
  *    loop, no polling.
  *  - No work off-surface: the Flow is collected only between [onSurface] and
  *    [offSurface].
- *  - No bubble churn: the bubble is added ONCE ([ensureAttached]) and toggled VISIBLE/
- *    GONE, never add/removed per app-switch (D17). The block is add/removed on demand
- *    (rare, and a focusable window must not linger — see [BlockScreenController]).
+ *  - No bubble churn: the bubble is added ONCE ([ensureAttached]) and never add/removed per
+ *    app-switch or idle-timeout (D17/D29). It is ALSO never toggled [View.GONE]: a GONE root
+ *    view makes WindowManagerService hide the window and free its surface (BLASTBufferQueue),
+ *    so a GONE/VISIBLE cycle on the hysteresis timer churned a construct/destruct surface
+ *    every ~3–5s (D30). Instead the root stays [View.VISIBLE] for the service's lifetime and
+ *    "hidden" means alpha 0 + [WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE] ([setBubbleShown])
+ *    — both keep the window visible, so the surface persists. The block is add/removed on
+ *    demand (rare, and a focusable window must not linger — see [BlockScreenController]).
+ *  - Surface-driven visibility (D29, supersedes D21): the bubble is VISIBLE the whole time
+ *    we're on the reel surface (the service's hysteresis keeps us "on surface" across the
+ *    gap between swipes) and GONE once [offSurface] fires — no per-scroll show + idle-hide.
  *  - Optional: if the overlay permission isn't granted, everything is a silent no-op so
  *    detection is completely unaffected.
  *
@@ -89,14 +98,19 @@ class OverlayController(
     /** Live layout params so drag can mutate x/y and re-apply them. */
     private var layoutParams: WindowManager.LayoutParams? = null
 
-    /** Scope for the count-Flow collection; alive only while the bubble is VISIBLE. */
+    /** Whether the bubble is currently shown (alpha 1 + touchable). Tracked so [setBubbleShown]
+     *  is idempotent and doesn't relayout the window on a no-op toggle. */
+    private var bubbleShown = false
+
+    /** Scope for the count-Flow collection; alive only while on the doom surface. */
     private var collectScope: CoroutineScope? = null
 
     /**
-     * Add the bubble to the window exactly once, starting hidden ([View.GONE]).
-     * Idempotent, and a no-op if the overlay permission isn't granted — in that case
-     * we retry lazily from [setVisible] (the user may grant it later). Detection never
-     * depends on this succeeding.
+     * Add the bubble to the window exactly once, starting hidden (alpha 0 +
+     * FLAG_NOT_TOUCHABLE — the root stays [View.VISIBLE] so the surface is created once and
+     * kept; see [setBubbleShown]). Idempotent, and a no-op if the overlay permission isn't
+     * granted — in that case we retry lazily from [onSurface] (the user may grant it later).
+     * Detection never depends on this succeeding.
      */
     fun ensureAttached() {
         if (bubble != null) return
@@ -105,8 +119,8 @@ class OverlayController(
             return
         }
 
-        val view = createBubbleView().apply { visibility = View.GONE }
-        val params = createLayoutParams()
+        val view = createBubbleView().apply { alpha = 0f }
+        val params = createLayoutParams()   // starts with FLAG_NOT_TOUCHABLE (hidden)
         try {
             windowManager.addView(view, params)
         } catch (e: Exception) {
@@ -116,6 +130,7 @@ class OverlayController(
         }
         bubble = view
         layoutParams = params
+        bubbleShown = false   // matches the alpha-0 + NOT_TOUCHABLE hidden state we just attached
     }
 
     /**
@@ -136,7 +151,7 @@ class OverlayController(
         collectScope = null
         currentPlatform = null
         unlocked = false
-        bubble?.visibility = View.GONE
+        bubble?.let { setBubbleShown(it, false) }
         block.hide()
     }
 
@@ -154,10 +169,12 @@ class OverlayController(
         }
         bubble = null
         layoutParams = null
+        bubbleShown = false
     }
 
     /** Collect the platform's count and (re)render on change only. */
     private fun startCollecting(platform: Platform) {
+        collectScope?.cancel()   // defensive: never leak a prior platform's collector on a direct switch
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         collectScope = scope
         repository.observeToday(platform)
@@ -167,24 +184,60 @@ class OverlayController(
     }
 
     /**
-     * Decide and show bubble vs block for the current count. The block only fires when
-     * surface gating is genuinely active (non-empty markers) — see [BlockPolicy], which
-     * keeps "never the feed" true until the surface tour populates the markers.
+     * Decide and show bubble vs block for the current count. Visibility is SURFACE-DRIVEN
+     * (D29, supersedes D21's per-scroll idle-dismiss): the bubble is VISIBLE the whole time
+     * we're on the reel surface — the service's hysteresis keeps us "on surface" across the
+     * gap between swipes, and [offSurface] hides it on leaving. The block only fires when
+     * [PlatformSpec.blockEnabled] is set (false for every platform today — never the feed).
      */
     private fun render(platform: Platform, count: Int) {
         lastCount = count
         val spec = PlatformRegistry.specFor(platform)
-        when (BlockPolicy.overlayFor(count, spec.dailyLimit, spec.surfaceMarkers.isNotEmpty(), unlocked)) {
+        when (BlockPolicy.overlayFor(count, spec.dailyLimit, spec.blockEnabled, unlocked)) {
             SurfaceOverlay.BLOCK -> {
-                bubble?.visibility = View.GONE
+                bubble?.let { setBubbleShown(it, false) }
                 block.show(platform, guiltLine())
             }
             SurfaceOverlay.BUBBLE -> {
                 block.hide()
-                val view = bubble ?: return    // no overlay permission — nothing to show
-                view.visibility = View.VISIBLE
+                val view = bubble ?: return          // no overlay permission — nothing to show
+                if (!SettingsPrefs.isBubbleEnabled(context)) {
+                    setBubbleShown(view, false)       // user turned the bubble off
+                    return
+                }
                 renderCount(view, count)
+                setBubbleShown(view, true)            // visible while on the reel surface
             }
+        }
+    }
+
+    /**
+     * Show/hide the bubble WITHOUT churning its surface (D30). We never toggle [View.GONE] on
+     * the window's root view: WindowManagerService frees a GONE window's surface
+     * (BLASTBufferQueue) and re-allocates it on VISIBLE, which on the hysteresis cycle produced
+     * a construct/destruct surface every ~3–5s. Instead the root stays [View.VISIBLE] for the
+     * service's lifetime and we hide it by:
+     *  - fading [View.setAlpha] to 0 (draw-time only — no relayout to zero size, so the surface
+     *    is not freed), and
+     *  - adding [WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE] so the now-transparent overlay
+     *    passes touches through to the app underneath instead of eating taps in its corner.
+     * Both are relayouts that keep the window visible, so the surface persists across the toggle.
+     * Idempotent: a no-op toggle skips the [WindowManager.updateViewLayout] relayout entirely.
+     */
+    private fun setBubbleShown(view: TextView, shown: Boolean) {
+        if (shown == bubbleShown) return
+        bubbleShown = shown
+        view.alpha = if (shown) 1f else 0f
+        val params = layoutParams ?: return
+        params.flags = if (shown) {
+            params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+        } else {
+            params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        }
+        try {
+            windowManager.updateViewLayout(view, params)
+        } catch (e: Exception) {
+            Log.w(TAG, "updateViewLayout failed toggling bubble visibility", e)
         }
     }
 
@@ -252,8 +305,11 @@ class OverlayController(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             type,
+            // Starts hidden: NOT_TOUCHABLE (with alpha 0 in ensureAttached) so the freshly
+            // attached, invisible bubble passes touches through until the first [setBubbleShown].
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.START

@@ -5,11 +5,10 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.scrollkiller.ui.home.HomeScreen
-import com.scrollkiller.ui.home.HomeViewModel
+import com.scrollkiller.ui.dashboard.DashboardScreen
+import com.scrollkiller.ui.dashboard.DashboardViewModel
 import com.scrollkiller.ui.onboarding.AccessibilityStatus
 import com.scrollkiller.ui.onboarding.DisclosureScreen
 import com.scrollkiller.ui.onboarding.OverlayPermissionScreen
@@ -23,7 +22,7 @@ import com.scrollkiller.ui.theme.ScrollKillerTheme
  *  1. accessibility NOT enabled           -> [DisclosureScreen] (required permission)
  *  2. accessibility on, overlay missing
  *     and the step not yet dismissed       -> [OverlayPermissionScreen] (optional)
- *  3. otherwise                            -> [HomeScreen] with the live count
+ *  3. otherwise                            -> [DashboardScreen] (Today / Apps / Settings)
  *
  * Both permission flags are re-checked in [onResume] so returning from the system
  * Settings screen immediately advances the UI without a restart. The overlay step is
@@ -56,9 +55,16 @@ class MainActivity : ComponentActivity() {
                         onSkipClick = { dismissOverlayStep() },
                     )
                     else -> {
-                        val homeViewModel: HomeViewModel = viewModel()
-                        val count = homeViewModel.count.collectAsState().value
-                        HomeScreen(count = count)
+                        val dashboardViewModel: DashboardViewModel = viewModel()
+                        DashboardScreen(
+                            viewModel = dashboardViewModel,
+                            accessibilityEnabled = accessibilityEnabled.value,
+                            canDrawOverlays = canDrawOverlays.value,
+                            onOpenAccessibilitySettings = {
+                                AccessibilityStatus.openAccessibilitySettings(this)
+                            },
+                            onOpenOverlaySettings = { OverlayStatus.openOverlaySettings(this) },
+                        )
                     }
                 }
             }

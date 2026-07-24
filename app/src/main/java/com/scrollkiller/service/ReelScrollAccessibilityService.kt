@@ -1,9 +1,17 @@
 package com.scrollkiller.service
 
 import android.accessibilityservice.AccessibilityService
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
+import androidx.core.content.ContextCompat
+import com.scrollkiller.BuildConfig
 import com.scrollkiller.ScrollKillerApp
 import com.scrollkiller.data.CountRepository
 
@@ -21,10 +29,32 @@ import com.scrollkiller.data.CountRepository
  * captions, or content is ever touched. Window-state-changed events (used to gate
  * the overlay bubble) carry only the foreground package/class name, never content.
  *
- * Logcat (filter with `adb logcat -s ScrollKiller`):
- *   D/ScrollKiller: REEL_ADVANCE platform=instagram
+ * Logcat (filter with `adb logcat -s ScrollKiller`): in a DEBUG build every scroll and
+ * every window-state change emits ONE compact `DIAG` line (see [SurfaceDiagnostics]); stamp
+ * the transcript between tour steps with:
+ *   adb shell am broadcast -p com.scrollkiller -a com.scrollkiller.DIAG_LABEL --es label "IG_REELS"
  */
 class ReelScrollAccessibilityService : AccessibilityService() {
+
+    /**
+     * DEBUG-only. Lets the surface-tour operator stamp the logcat transcript between steps
+     * (and snapshot the current window tree) via an adb broadcast — so surfaces are
+     * unambiguously separated. Registered exported (shell UID must reach it) only in debug
+     * builds; never registered in release. Kept tiny: it just delegates to
+     * [SurfaceDiagnostics], so the event-only service stays free of God-class logic.
+     */
+    private val labelReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val root = rootInActiveWindow
+            val spec = PlatformRegistry.forPackage(root?.packageName)
+            SurfaceDiagnostics.logLabel(intent?.getStringExtra(EXTRA_LABEL), root, spec)
+            @Suppress("DEPRECATION") // recycle() is correct on API 26–32; a no-op on 33+.
+            root?.recycle()
+        }
+    }
+
+    /** Whether [labelReceiver] is currently registered (so teardown is idempotent). */
+    private var labelReceiverRegistered = false
 
     /** One detector per platform so each keeps its own quiet-gap timer. */
     private val detectors = mutableMapOf<Platform, SwipeDetector>()
@@ -44,108 +74,181 @@ class ReelScrollAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * The single "user is doomscrolling right now" state — the tracked [Platform] whose
-     * doom surface ([SurfaceMatcher]) is foreground, or null when off-surface. BOTH the
-     * counting gate and the overlay read this, so they can never disagree. Updated from
-     * scroll events (node ancestry) and window-STATE changes (root tree scan); never
-     * from the content-changed flood (kept cheap). Routed through [setDoomSurface] so
-     * the overlay only reacts on a genuine transition. Carrying the platform (not just a
-     * Boolean) is what lets the overlay gate the block on that platform's count/limit.
+     * "User is doomscrolling right now" — the tracked [Platform] whose doom surface is
+     * foreground, or null when off. Drives the overlay (bubble/block) visibility. Set ONLY
+     * from PER-EVENT surface state (a scrolled node whose ancestry matches a marker) plus a
+     * hysteresis timer, NEVER from a whole-window marker scan: the YouTube home feed embeds a
+     * Shorts *shelf*, so a tree-wide scan false-positives on the feed (D28). Routed through
+     * [setDoomSurface] so the overlay only reacts on a genuine transition.
      */
     private var doomPlatform: Platform? = null
 
+    /**
+     * Keeps [doomPlatform] "on surface" for [SURFACE_HYSTERESIS_MS] after the last
+     * matching-surface scroll, so the bubble doesn't flicker off in the gap between swipes
+     * (D28). Fires [hideSurfaceRunnable] to drop the OVERLAY only — it deliberately does NOT
+     * end the entry-count session (a long watch must not re-trigger the landing count).
+     */
+    private val surfaceHandler = Handler(Looper.getMainLooper())
+    private val hideSurfaceRunnable = Runnable { setDoomSurface(null) }
+
+    /**
+     * Entry-count session (D29): the platform whose landing reel we've already credited. A
+     * "session" starts on the first matching-surface scroll and ends only on leaving the
+     * tracked app ([clearSurface]) — NOT when hysteresis drops the overlay — so watching one
+     * reel for a while and then swiping never re-counts the landing reel.
+     */
+    private var enteredPlatform: Platform? = null
+    private var lastEntryAtMs = 0L
+
     /** Attach the bubble window ONCE, up front. It stays attached (toggled VISIBLE/
-     *  GONE) for the service's lifetime — no per-app-switch add/remove churn (D17). */
+     *  GONE) for the service's lifetime — no per-app-switch add/remove churn (D17/D29). */
     override fun onServiceConnected() {
         super.onServiceConnected()
         overlay.ensureAttached()
+        registerLabelReceiver()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
 
-        // Rich node-tree diagnostics for the surface tour. Compiled out of release
-        // builds (BuildConfig.DEBUG gate inside). See SurfaceDiagnostics.
         when (event.eventType) {
-            AccessibilityEvent.TYPE_VIEW_SCROLLED -> SurfaceDiagnostics.logScrolled(event)
-            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
-            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED ->
-                SurfaceDiagnostics.logWindowChange(event, rootInActiveWindow)
-        }
-
-        when (event.eventType) {
-            AccessibilityEvent.TYPE_VIEW_SCROLLED -> onScrolled(event)
-            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> onForegroundChanged(event)
-            // WINDOW_CONTENT_CHANGED intentionally drives NO runtime surface work — it
-            // fires constantly; scanning per event would be too costly. Surface state
-            // comes from scroll ancestry + window-state scans, which is enough.
+            AccessibilityEvent.TYPE_VIEW_SCROLLED -> onScrolled(event) // emits its own DIAG line
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
+                // One compact DIAG WINDOW line per surface transition (needs the active-window
+                // root for the window-level verdict). Compiled out of release via DEBUG.
+                if (DEBUG) {
+                    val root = rootInActiveWindow
+                    SurfaceDiagnostics.logWindow(event, root)
+                    @Suppress("DEPRECATION") // recycle() is correct on API 26–32; a no-op on 33+.
+                    root?.recycle()
+                }
+                onForegroundChanged(event)
+            }
+            // WINDOW_CONTENT_CHANGED intentionally drives NO work (nor logging) — it fires
+            // constantly; scanning/logging per event would be too costly and would drown the
+            // transcript. Surface state comes from scroll ancestry + window-state scans.
         }
     }
 
     /**
-     * Reel-advance detection, now gated on package AND surface. The scrolled node's
-     * ancestry is the authoritative surface signal (we already hold the node), so it
-     * both gates counting and keeps [onDoomSurface] in sync.
+     * Advance detection, gated on package, a container-class match ([PlatformSpec.matchesContainer],
+     * simple-name so legacy support-lib widgets hit — D27) AND, per the platform's [GatingMode],
+     * the doom-surface marker on the scrolled node's ancestry (the authoritative, cheap signal
+     * we already hold).
+     *
+     * Gating (D24): PASSTHROUGH/SHADOW count regardless of the marker match (SHADOW logs what
+     * enforcement WOULD do so a candidate can be confirmed on a device); ENFORCED counts ONLY
+     * on a match (a wrong guess undercounts, never counts a home feed).
+     *
+     * The per-event marker match is ALSO the overlay's surface signal ([onSurfaceEvent]) — the
+     * same signal counting uses — so the bubble/block can't disagree with counting and never
+     * relies on a false-positive-prone whole-window scan (D28).
      */
     @Suppress("DEPRECATION") // recycle() is correct on API 26–32; a no-op on 33+.
     private fun onScrolled(event: AccessibilityEvent) {
         // Which tracked platform is this from? Bail on anything unregistered.
         val spec = PlatformRegistry.forPackage(event.packageName) ?: return
 
-        // Is the scrolled view the reel container we care about (not some other
-        // list in the app, e.g. comments)?
-        val className = event.className?.toString().orEmpty()
-        if (spec.containerHints.none { className.endsWith(it) }) return
-
-        // Surface gate: are we actually on the doom surface (Reels viewer), not the
-        // feed/comments that share the same container widget? Pass-through until the
-        // spec's surfaceMarkers are populated from the surface tour.
-        val source = event.source
-        val onSurface = SurfaceMatcher.matchesSurface(source, spec)
-        source?.recycle()
-        setDoomSurface(if (onSurface) spec.platform else null)
-        if (!onSurface) return
-
         val direction = scrollDirection(event)
-        val detector = detectors.getOrPut(spec.platform) { SwipeDetector(spec.minAdvanceIntervalMs) }
+        val className = event.className?.toString().orEmpty()
+        val source = event.source
 
-        // Debounce the fling burst into a single forward advance.
-        if (detector.onScroll(direction, System.currentTimeMillis())) {
-            repository.record(spec.platform)
-            Log.d(TAG, "REEL_ADVANCE platform=${spec.platform.id}")
+        // Is the scrolled view a tracked container, and is it on the doom surface (marker
+        // match on the scrolled node's ancestry)?
+        val isContainer = spec.matchesContainer(className)
+        val markerMatched = isContainer && SurfaceMatcher.matchesSurface(source, spec)
+
+        var counted = false
+        val reason: String
+        if (!isContainer) {
+            reason = "$className is not a tracked container"
+        } else {
+            val now = System.currentTimeMillis()
+
+            // A matching-surface scroll drives the overlay + entry-count (per-event, no window
+            // scan). Non-matching container scrolls (feed/profile/DMs) do NOT — so they can't
+            // keep the bubble alive or credit an entry.
+            if (markerMatched) onSurfaceEvent(spec.platform, now)
+
+            val countable = when (spec.gating) {
+                GatingMode.PASSTHROUGH, GatingMode.SHADOW -> true
+                GatingMode.ENFORCED -> markerMatched
+            }
+            if (!countable) {
+                reason = "ENFORCED off-surface (marker unmatched)"
+            } else {
+                val detector = detectors.getOrPut(spec.platform) { SwipeDetector(spec.minAdvanceIntervalMs) }
+                // Debounce the fling burst into a single forward advance.
+                if (detector.onScroll(direction, now)) {
+                    repository.record(spec, now)
+                    counted = true
+                    reason = if (spec.gating == GatingMode.SHADOW && !markerMatched) {
+                        "counted (SHADOW: marker UNMATCHED — would be IGNORED once ENFORCED)"
+                    } else {
+                        "counted (advance)"
+                    }
+                } else {
+                    reason = "debounced ($direction inside quiet-gap)"
+                }
+            }
+        }
+
+        // The single compact transcript line for this scroll (DEBUG only). It reads the
+        // scrolled node's ancestry itself for the id-chain + verdict, so emit BEFORE recycling.
+        if (DEBUG) {
+            SurfaceDiagnostics.logScroll(spec, event, source, direction, counted, reason)
+            // YT-only discovery dump: YouTube Shorts reports deltaY=0 on every matched scroll
+            // (→ SAME → debounced, only the landing short counts — D27). Dump the fields the
+            // compact line drops so we can find YT's real advance signal from evidence. Gated to
+            // YT-matched scrolls so it doesn't flood the transcript for calibrated platforms.
+            if (spec.platform == Platform.YOUTUBE && markerMatched) {
+                SurfaceDiagnostics.logScrollFields(event, source)
+            }
+        }
+        source?.recycle()
+    }
+
+    /**
+     * A matching-surface scroll just happened on [platform]. Two effects:
+     *  1. OVERLAY: mark on-surface (shows the bubble / block) and (re)arm the hysteresis timer
+     *     so the overlay stays up across the gap between swipes (D28).
+     *  2. ENTRY-COUNT (D29): credit the reel the user LANDED on, which fires no scroll event of
+     *     its own. Counted once per surface session — the session ends only on leaving the app
+     *     ([clearSurface]), and a [ENTRY_GUARD_MS] guard means a quick flicker out-and-back
+     *     doesn't double-count. Net effect: total = (landing reel) + (swipes), off-by-one
+     *     UP from the old behaviour, well within the ±2/50 bar.
+     */
+    private fun onSurfaceEvent(platform: Platform, now: Long) {
+        setDoomSurface(platform)
+        surfaceHandler.removeCallbacks(hideSurfaceRunnable)
+        surfaceHandler.postDelayed(hideSurfaceRunnable, SURFACE_HYSTERESIS_MS)
+
+        if (enteredPlatform != platform && now - lastEntryAtMs > ENTRY_GUARD_MS) {
+            enteredPlatform = platform
+            lastEntryAtMs = now
+            repository.record(PlatformRegistry.specFor(platform), now)
         }
     }
 
     /**
-     * Foreground/window changed. Re-derive the doom surface: for a tracked package we
-     * scan the active window's node tree for the surface markers; anything else means
-     * we've left tracked content. The service is scoped to all packages precisely so
-     * the "left Instagram" window-state-changed (which belongs to the destination app)
-     * is delivered here.
-     *
-     * We deliberately do NOT de-dup on package anymore: entering the Reels viewer WITHIN
-     * Instagram fires a same-package window-state-changed, and we need to re-scan for
-     * it. [setDoomSurface] transition-gates the actual show/hide, so re-evaluating on
-     * every window-state event is idempotent and flicker-free. (In the interim, empty
-     * surfaceMarkers short-circuit the scan to `true`, so this stays cheap and collapses
-     * to the old package-based show/hide.)
+     * Foreground/window changed. This is now ONLY a "left the tracked app" signal — the
+     * window-state-changed for the destination app is delivered here because the service is
+     * scoped to all packages. We deliberately do NOT scan the window tree to decide "on
+     * surface": the YouTube home feed embeds a Shorts shelf, so a tree-wide marker scan
+     * false-positives on the feed (D28). Entering the reel surface is detected per-event from
+     * scroll ancestry ([onSurfaceEvent]) instead; leaving it WITHIN the app is handled by the
+     * hysteresis timer expiring (no more matching scrolls).
      */
-    @Suppress("DEPRECATION") // recycle() is correct on API 26–32; a no-op on 33+.
     private fun onForegroundChanged(event: AccessibilityEvent) {
         val pkg = event.packageName?.toString()
         if (pkg.isNullOrEmpty()) return
         if (pkg == packageName) return          // our overlay/UI is not a foreground change
 
-        val spec = PlatformRegistry.forPackage(pkg)
-        if (spec == null) {
-            setDoomSurface(null)                // left the tracked app entirely
-            return
-        }
-
-        val root = rootInActiveWindow
-        val onSurface = SurfaceMatcher.windowMatchesSurface(root, spec)
-        root?.recycle()
-        setDoomSurface(if (onSurface) spec.platform else null)
+        // Left every tracked app → drop the overlay AND end the entry-count session now.
+        // A tracked destination is left to the per-event surface signal (a stale window scan
+        // here would false-positive on a feed), so we do nothing for it.
+        if (PlatformRegistry.forPackage(pkg) == null) clearSurface()
     }
 
     /** Update the doom-surface state and drive the overlay, but only on a real change. */
@@ -153,6 +256,17 @@ class ReelScrollAccessibilityService : AccessibilityService() {
         if (platform == doomPlatform) return
         doomPlatform = platform
         if (platform != null) overlay.onSurface(platform) else overlay.offSurface()
+    }
+
+    /**
+     * Left the tracked app entirely: cancel hysteresis, hide the overlay, and END the
+     * entry-count session so the next genuine entry credits its landing reel again. Kept
+     * separate from the hysteresis [hideSurfaceRunnable], which drops only the overlay.
+     */
+    private fun clearSurface() {
+        surfaceHandler.removeCallbacks(hideSurfaceRunnable)
+        enteredPlatform = null
+        setDoomSurface(null)
     }
 
     /**
@@ -193,17 +307,73 @@ class ReelScrollAccessibilityService : AccessibilityService() {
 
     /** Tear the bubble down if the service is unbound/disabled. */
     override fun onUnbind(intent: android.content.Intent?): Boolean {
+        surfaceHandler.removeCallbacks(hideSurfaceRunnable)
         overlay.destroy()
+        unregisterLabelReceiver()
         return super.onUnbind(intent)
     }
 
     override fun onDestroy() {
+        surfaceHandler.removeCallbacks(hideSurfaceRunnable)
         overlay.destroy()
+        unregisterLabelReceiver()
         super.onDestroy()
+    }
+
+    /**
+     * Register the DEBUG-only tour-label receiver. Exported (RECEIVER_EXPORTED) because the
+     * stamp arrives from the adb shell UID. No-op in release builds — never registered, so no
+     * externally-reachable receiver ships.
+     */
+    private fun registerLabelReceiver() {
+        if (!DEBUG || labelReceiverRegistered) return
+        ContextCompat.registerReceiver(
+            this,
+            labelReceiver,
+            IntentFilter(ACTION_DIAG_LABEL),
+            ContextCompat.RECEIVER_EXPORTED,
+        )
+        labelReceiverRegistered = true
+    }
+
+    private fun unregisterLabelReceiver() {
+        if (!labelReceiverRegistered) return
+        unregisterReceiver(labelReceiver)
+        labelReceiverRegistered = false
     }
 
     private companion object {
         /** Single tag so you can filter everything with: `adb logcat -s ScrollKiller`. */
         const val TAG = "ScrollKiller"
+
+        /** Broadcast action for the surface-tour label stamp (DEBUG only). */
+        const val ACTION_DIAG_LABEL = "com.scrollkiller.DIAG_LABEL"
+
+        /** String extra on [ACTION_DIAG_LABEL] carrying the human label for the log banner. */
+        const val EXTRA_LABEL = "label"
+
+        /**
+         * How long the overlay stays "on surface" after the last matching-surface scroll, so
+         * the bubble doesn't flicker off in the gap between swipes (D28). Short by design —
+         * long enough to bridge a normal inter-swipe pause, short enough that leaving the reel
+         * surface hides the bubble promptly.
+         */
+        const val SURFACE_HYSTERESIS_MS = 3_000L
+
+        /**
+         * Minimum gap before a fresh surface entry re-credits its landing reel (D29). Guards
+         * against a quick flicker out-and-back (e.g. an IME/dialog from another package)
+         * double-counting the entry.
+         */
+        const val ENTRY_GUARD_MS = 3_000L
+
+        /**
+         * Master toggle for the verbose surface-tour logging (the compact `DIAG` lines +
+         * per-label tree snapshot in [SurfaceDiagnostics], and the label receiver). Tied to
+         * [BuildConfig.DEBUG] so release builds NEVER log the view hierarchy (privacy + Play).
+         * To force it during a debug session, temporarily set this to `true` — but do not ship
+         * it that way.
+         */
+        val DEBUG = BuildConfig.DEBUG
     }
 }
