@@ -13,10 +13,11 @@ object BlockPolicy {
     /**
      * @param count today's count for the platform.
      * @param limit the platform's daily limit.
-     * @param gatingActive whether Reels-only surface gating is genuinely active
-     *   (i.e. `spec.surfaceMarkers.isNotEmpty()`). While FALSE the whole tracked app
-     *   would match the doom surface, so we must NOT block — that would cover the feed.
-     *   This keeps "never the feed" true until the surface tour fills the markers.
+     * @param gatingActive whether this platform is cleared to block at all. Callers pass
+     *   [PlatformSpec.blocksAtLimit], which is true only when the block is switched on for
+     *   the platform AND its count is trusted ([Maturity.STABLE]) — so a platform with
+     *   unverified surface markers can't cover the feed (D19/D24), and one with a known-wrong
+     *   count can't lock the screen on a bad number (D32).
      * @param unlocked whether the user has bypassed the block for this surface visit.
      */
     fun overlayFor(count: Int, limit: Int, gatingActive: Boolean, unlocked: Boolean): SurfaceOverlay =

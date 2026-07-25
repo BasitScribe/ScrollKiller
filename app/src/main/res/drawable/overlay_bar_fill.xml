@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The filled part of one platform's bar in the bubble's expanded breakdown panel. Near-opaque
+    white for the same reason the track is translucent white — it has to carry against every
+    brain-state accent the pill can be tinted (see overlay_bar_track).
+
+    Deliberately NOT per-platform brand colours: this panel is a breakdown of ONE total, and
+    five brand colours over an accent-tinted pill would read as five unrelated meters.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#F2FFFFFF" />
+    <corners android:radius="3dp" />
+</shape>

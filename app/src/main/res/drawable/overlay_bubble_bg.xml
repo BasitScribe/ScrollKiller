@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
     Rounded pill background for the floating live-counter bubble. A vector shape (no
-    raster asset) keeps the overlay cheap. Semi-opaque dark fill so the 🧠 + count
+    raster asset) keeps the overlay cheap. Semi-opaque dark fill so the mascot + count
     stay legible over any reel; the fixed colors are intentional (the bubble draws
     over other apps, not inside our theme).
 -->

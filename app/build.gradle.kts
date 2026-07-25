@@ -81,6 +81,9 @@ dependencies {
 
     // Local unit tests (run on your machine's JVM, no device needed).
     testImplementation(libs.junit)
+    // Real org.json for the JVM: the framework one is a throwing stub in unit tests, and the
+    // guilt-pack parser is worth testing off-device. Test classpath only — never shipped.
+    testImplementation(libs.org.json)
 
     // Instrumented tests (run on an emulator/device).
     androidTestImplementation(libs.androidx.junit)

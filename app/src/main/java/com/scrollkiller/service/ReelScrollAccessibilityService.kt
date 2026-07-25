@@ -22,12 +22,18 @@ import com.scrollkiller.data.CountRepository
  * service ONLY observes accessibility events, debounces them into discrete "reel
  * advanced" signals, and hands them to the [CountRepository]. It must never become
  * a God-class — no Room, no networking, no per-platform detection logic lives here.
- * Which apps to watch and how to debounce them is data in [PlatformRegistry]; the
- * collapse logic is the pure [SwipeDetector]. This class just wires them to events.
+ * Which apps to watch and how to debounce them is data in [PlatformRegistry]; the collapse
+ * logic is the pure [SwipeDetector] or [IdentityAdvanceDetector], depending on the platform's
+ * [AdvanceStrategy]. This class just wires them to events.
  *
- * Privacy invariant: we read positional/direction metadata only. No screen text,
- * captions, or content is ever touched. Window-state-changed events (used to gate
- * the overlay bubble) carry only the foreground package/class name, never content.
+ * Privacy invariant: we read positional/direction metadata, plus — for an
+ * [AdvanceStrategy.IDENTITY_CHANGE] platform ONLY — the minimum node text needed to tell one
+ * item from the next (a channel handle; see [ReelIdentity]). That value is compared against
+ * the previous one and discarded in the same call: never stored, never synced, never logged
+ * outside DEBUG. Captions, comments and video content are never touched, and
+ * [com.scrollkiller.data.db.ScrollEvent] still records counts and package names only — so the
+ * architecture invariant "no content data ever leaves the device" holds. Window-state-changed
+ * events (used to gate the overlay bubble) carry only the foreground package/class name.
  *
  * Logcat (filter with `adb logcat -s ScrollKiller`): in a DEBUG build every scroll and
  * every window-state change emits ONE compact `DIAG` line (see [SurfaceDiagnostics]); stamp
@@ -47,7 +53,12 @@ class ReelScrollAccessibilityService : AccessibilityService() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val root = rootInActiveWindow
             val spec = PlatformRegistry.forPackage(root?.packageName)
-            SurfaceDiagnostics.logLabel(intent?.getStringExtra(EXTRA_LABEL), root, spec)
+            val label = intent?.getStringExtra(EXTRA_LABEL)
+            // A `YTPROBE*` label starts a capture: zero the monotonic counters and stamp the
+            // decision table into the transcript, so each capture is self-contained and the
+            // outcomes are read against the shipped branches rather than from memory.
+            if (label != null && label.startsWith(YTPROBE_LABEL_PREFIX)) YtProbe.reset(label)
+            SurfaceDiagnostics.logLabel(label, root, spec)
             @Suppress("DEPRECATION") // recycle() is correct on API 26–32; a no-op on 33+.
             root?.recycle()
         }
@@ -58,6 +69,20 @@ class ReelScrollAccessibilityService : AccessibilityService() {
 
     /** One detector per platform so each keeps its own quiet-gap timer. */
     private val detectors = mutableMapOf<Platform, SwipeDetector>()
+
+    /**
+     * One identity detector per [AdvanceStrategy.IDENTITY_CHANGE] platform, holding the last
+     * counted per-item identity. Separate from [detectors] because the two strategies key off
+     * completely different signals and a platform uses exactly one of them (D34).
+     */
+    private val identityDetectors = mutableMapOf<Platform, IdentityAdvanceDetector>()
+
+    /**
+     * Last time an identity evaluation was allowed to run, for the [IDENTITY_SCAN_MIN_MS] rate
+     * limit. Global rather than per-platform: only one app is foreground at a time, and this is
+     * a cost guard, not a correctness one.
+     */
+    private var lastIdentityScanMs = 0L
 
     /** App-wide repository; resolved lazily once the service is attached to context. */
     private val repository: CountRepository by lazy {
@@ -122,13 +147,128 @@ class ReelScrollAccessibilityService : AccessibilityService() {
                     SurfaceDiagnostics.logWindow(event, root)
                     @Suppress("DEPRECATION") // recycle() is correct on API 26–32; a no-op on 33+.
                     root?.recycle()
+                    probeYouTube(event, YtProbe.Kind.WINDOW_STATE)
                 }
                 onForegroundChanged(event)
             }
-            // WINDOW_CONTENT_CHANGED intentionally drives NO work (nor logging) — it fires
-            // constantly; scanning/logging per event would be too costly and would drown the
-            // transcript. Surface state comes from scroll ancestry + window-state scans.
+            // WINDOW_CONTENT_CHANGED is now a real counting path — but ONLY for a platform whose
+            // [AdvanceStrategy] is IDENTITY_CHANGE (YouTube today), because that is where the
+            // D31 capture found the per-Short signal (D34). For every other platform this is
+            // still a no-op: the event fires constantly, so acting on it per event would be far
+            // too costly. [onContentChanged] rate-limits before doing ANY node work.
+            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> onContentChanged(event)
         }
+    }
+
+    /**
+     * DEBUG-only capture hook for WINDOW_STATE, which has no counting path of its own (branch
+     * `probe-only-no-counting-path`) — it just gives surface transitions context in the
+     * transcript. Bails immediately for anything that isn't YouTube, so no other package pays
+     * for it. Window-state changes are rare, so this is probed unconditionally.
+     */
+    @Suppress("DEPRECATION") // recycle() is correct on API 26–32; a no-op on 33+.
+    private fun probeYouTube(event: AccessibilityEvent, kind: YtProbe.Kind) {
+        val spec = PlatformRegistry.forPackage(event.packageName) ?: return
+        if (spec.platform != Platform.YOUTUBE) return
+
+        val source = event.source
+        YtProbe.log(
+            kind = kind,
+            event = event,
+            source = source,
+            spec = spec,
+            marker = SurfaceMatcher.matchesSurface(source, spec),
+            branch = YtProbe.Branch.PROBE_ONLY,
+            why = "$kind drives no counting — observation only",
+        )
+        source?.recycle()
+    }
+
+    /**
+     * Advance detection for [AdvanceStrategy.IDENTITY_CHANGE] platforms (YouTube Shorts today),
+     * whose per-item signal is a content change rather than a scroll (D34).
+     *
+     * WHY THIS EXISTS: Shorts reports `scrollDeltaY=0` on every scroll, so [onScrolled] can
+     * never count there. What does change once per advance is the Short's identity — the channel
+     * handle — carried on `TYPE_WINDOW_CONTENT_CHANGED`. But that event fires ~40× per Short
+     * (subtitles, like counts, "Auto-dubbed"), so we count the identity CHANGING, never the
+     * event: see [ReelIdentity] for extraction and [IdentityAdvanceDetector] for the decision.
+     *
+     * THREE GUARDS, in cost order — each one is why the next is affordable:
+     *  1. strategy + package: a platform that doesn't use identity advance returns on a map
+     *     lookup, so Instagram pays essentially nothing for this branch existing.
+     *  2. [IDENTITY_SCAN_MIN_MS] rate limit, checked BEFORE `event.source` is even touched.
+     *     This is the load-bearing one: it caps the ancestor walk + bounded subtree scan at a
+     *     few per second no matter how hard YouTube fires. One Short lasts seconds, so nothing
+     *     is missed.
+     *  3. the surface marker, so the YouTube home feed's Shorts shelf can't count (D28).
+     *
+     * A marker-matched content change also arms the overlay hysteresis, which is why the bubble
+     * now stays up while watching a single Short rather than needing a scroll to survive.
+     */
+    @Suppress("DEPRECATION") // recycle() is correct on API 26–32; a no-op on 33+.
+    private fun onContentChanged(event: AccessibilityEvent) {
+        val spec = PlatformRegistry.forPackage(event.packageName) ?: return
+        if (!spec.usesIdentityAdvance) return
+
+        val now = System.currentTimeMillis()
+        if (now - lastIdentityScanMs < IDENTITY_SCAN_MIN_MS) return
+        lastIdentityScanMs = now
+
+        val source = event.source ?: return
+        try {
+            if (!SurfaceMatcher.matchesSurface(source, spec)) return
+
+            // On the surface: keep the bubble alive. creditEntry=false because the identity path
+            // below already counts the Short the user LANDED on (its identity differs from
+            // "nothing seen yet"), so D29's separate entry credit would double it.
+            onSurfaceEvent(spec.platform, now, creditEntry = false)
+
+            val identity = ReelIdentity.identityOf(source, spec)
+            val detector = identityDetectors.getOrPut(spec.platform) {
+                IdentityAdvanceDetector(spec.minAdvanceIntervalMs)
+            }
+            val advance = detector.onIdentity(identity, now)
+            if (advance == IdentityAdvanceDetector.Advance.COUNTED) repository.record(spec, now)
+
+            if (DEBUG && spec.platform == Platform.YOUTUBE) {
+                YtProbe.log(
+                    kind = YtProbe.Kind.CONTENT_CHANGED,
+                    event = event,
+                    source = source,
+                    spec = spec,
+                    marker = true,   // we returned above unless the marker matched
+                    branch = branchFor(advance),
+                    why = reasonFor(advance),
+                    // Passed through as null on UNREADABLE ON PURPOSE: that makes YtProbe fall
+                    // back to its bounded DISCOVERY scan and print the `id:text` pairs actually
+                    // in the tree — which is exactly the evidence needed to explain why nothing
+                    // matched. Printing a dash there would hide the only useful thing.
+                    identity = identity,
+                )
+            }
+        } finally {
+            source.recycle()
+        }
+    }
+
+    /**
+     * Map the detector's real outcome onto a transcript branch. Threaded from the ACTUAL
+     * decision rather than re-derived, so the log can't drift from the logic (the property the
+     * whole probe rests on).
+     */
+    private fun branchFor(advance: IdentityAdvanceDetector.Advance): YtProbe.Branch = when (advance) {
+        IdentityAdvanceDetector.Advance.COUNTED -> YtProbe.Branch.IDENTITY_COUNTED
+        IdentityAdvanceDetector.Advance.UNREADABLE -> YtProbe.Branch.IDENTITY_UNREADABLE
+        IdentityAdvanceDetector.Advance.UNCHANGED -> YtProbe.Branch.IDENTITY_UNCHANGED
+        IdentityAdvanceDetector.Advance.FLOORED -> YtProbe.Branch.IDENTITY_FLOORED
+    }
+
+    private fun reasonFor(advance: IdentityAdvanceDetector.Advance): String = when (advance) {
+        IdentityAdvanceDetector.Advance.COUNTED -> "identity differs from the last counted one"
+        IdentityAdvanceDetector.Advance.UNREADABLE -> "no @handle and no identityTitleHints node — ignored"
+        IdentityAdvanceDetector.Advance.UNCHANGED -> "same identity as last counted (item re-rendering)"
+        IdentityAdvanceDetector.Advance.FLOORED -> "identity changed inside minAdvanceIntervalMs — retried next read"
     }
 
     /**
@@ -160,8 +300,13 @@ class ReelScrollAccessibilityService : AccessibilityService() {
         val markerMatched = isContainer && SurfaceMatcher.matchesSurface(source, spec)
 
         var counted = false
+        // Which branch this event took, for the YT capture probe. Mirrors `reason` but as a
+        // stable enum so the transcript reports the REAL decision, never a re-derived guess.
+        var branch: YtProbe.Branch
+        var entryCredited = false
         val reason: String
         if (!isContainer) {
+            branch = YtProbe.Branch.REJECTED_CONTAINER
             reason = "$className is not a tracked container"
         } else {
             val now = System.currentTimeMillis()
@@ -169,13 +314,21 @@ class ReelScrollAccessibilityService : AccessibilityService() {
             // A matching-surface scroll drives the overlay + entry-count (per-event, no window
             // scan). Non-matching container scrolls (feed/profile/DMs) do NOT — so they can't
             // keep the bubble alive or credit an entry.
-            if (markerMatched) onSurfaceEvent(spec.platform, now)
+            //
+            // creditEntry is OFF for an IDENTITY_CHANGE platform: its identity path already
+            // counts the item the user landed on, so crediting here too would double it — and
+            // on YouTube these scrolls are the DEAD deltaY=0 events, which under D29 were the
+            // only thing that ever incremented the count (D34).
+            if (markerMatched) {
+                entryCredited = onSurfaceEvent(spec.platform, now, creditEntry = !spec.usesIdentityAdvance)
+            }
 
             val countable = when (spec.gating) {
                 GatingMode.PASSTHROUGH, GatingMode.SHADOW -> true
                 GatingMode.ENFORCED -> markerMatched
             }
             if (!countable) {
+                branch = YtProbe.Branch.REJECTED_SURFACE
                 reason = "ENFORCED off-surface (marker unmatched)"
             } else {
                 val detector = detectors.getOrPut(spec.platform) { SwipeDetector(spec.minAdvanceIntervalMs) }
@@ -183,12 +336,14 @@ class ReelScrollAccessibilityService : AccessibilityService() {
                 if (detector.onScroll(direction, now)) {
                     repository.record(spec, now)
                     counted = true
+                    branch = YtProbe.Branch.COUNTED
                     reason = if (spec.gating == GatingMode.SHADOW && !markerMatched) {
                         "counted (SHADOW: marker UNMATCHED — would be IGNORED once ENFORCED)"
                     } else {
                         "counted (advance)"
                     }
                 } else {
+                    branch = YtProbe.Branch.DEBOUNCED_QUIET_GAP
                     reason = "debounced ($direction inside quiet-gap)"
                 }
             }
@@ -198,12 +353,22 @@ class ReelScrollAccessibilityService : AccessibilityService() {
         // scrolled node's ancestry itself for the id-chain + verdict, so emit BEFORE recycling.
         if (DEBUG) {
             SurfaceDiagnostics.logScroll(spec, event, source, direction, counted, reason)
-            // YT-only discovery dump: YouTube Shorts reports deltaY=0 on every matched scroll
-            // (→ SAME → debounced, only the landing short counts — D27). Dump the fields the
-            // compact line drops so we can find YT's real advance signal from evidence. Gated to
-            // YT-matched scrolls so it doesn't flood the transcript for calibrated platforms.
-            if (spec.platform == Platform.YOUTUBE && markerMatched) {
-                SurfaceDiagnostics.logScrollFields(event, source)
+            // YT capture probe (supersedes the old YTFIELDS dump — it prints those fields plus the
+            // event type, eventTime and the branch above). EVERY YouTube scroll is probed, not just
+            // marker-matched ones: a marker-matched event can never BE rejected-container or
+            // rejected-surface, so filtering here would make two of the four branches unobservable.
+            // The line carries marker=MATCH/NO_MATCH — grep `marker=MATCH` for the matched subset.
+            if (spec.platform == Platform.YOUTUBE) {
+                YtProbe.log(
+                    kind = YtProbe.Kind.SCROLLED,
+                    event = event,
+                    source = source,
+                    spec = spec,
+                    marker = markerMatched,
+                    branch = branch,
+                    why = reason,
+                    entryCredited = entryCredited,
+                )
             }
         }
         source?.recycle()
@@ -218,17 +383,26 @@ class ReelScrollAccessibilityService : AccessibilityService() {
      *     ([clearSurface]), and a [ENTRY_GUARD_MS] guard means a quick flicker out-and-back
      *     doesn't double-count. Net effect: total = (landing reel) + (swipes), off-by-one
      *     UP from the old behaviour, well within the ±2/50 bar.
+     *
+     * @param creditEntry whether effect 2 applies. FALSE for an [AdvanceStrategy.IDENTITY_CHANGE]
+     *   platform, whose identity path inherently counts the landed-on item (its identity differs
+     *   from "nothing seen yet") — taking both would double it. Effect 1 always applies. See D34.
+     * @return true if this call credited the landing reel. Returned (not just done silently) so
+     *   the YT capture probe can attribute the extra Room increment — otherwise `ytCounted` would
+     *   move by one with no visible branch explaining it.
      */
-    private fun onSurfaceEvent(platform: Platform, now: Long) {
+    private fun onSurfaceEvent(platform: Platform, now: Long, creditEntry: Boolean): Boolean {
         setDoomSurface(platform)
         surfaceHandler.removeCallbacks(hideSurfaceRunnable)
         surfaceHandler.postDelayed(hideSurfaceRunnable, SURFACE_HYSTERESIS_MS)
 
-        if (enteredPlatform != platform && now - lastEntryAtMs > ENTRY_GUARD_MS) {
+        if (creditEntry && enteredPlatform != platform && now - lastEntryAtMs > ENTRY_GUARD_MS) {
             enteredPlatform = platform
             lastEntryAtMs = now
             repository.record(PlatformRegistry.specFor(platform), now)
+            return true
         }
+        return false
     }
 
     /**
@@ -262,10 +436,16 @@ class ReelScrollAccessibilityService : AccessibilityService() {
      * Left the tracked app entirely: cancel hysteresis, hide the overlay, and END the
      * entry-count session so the next genuine entry credits its landing reel again. Kept
      * separate from the hysteresis [hideSurfaceRunnable], which drops only the overlay.
+     *
+     * The identity detectors are reset here for the same reason and NOT on hysteresis expiry:
+     * an IDENTITY_CHANGE platform expresses "credit the landing item" as "the first identity of
+     * a session always differs from nothing", so forgetting it mid-app would re-count the Short
+     * still on screen. Leaving the app is the one moment where re-counting is correct.
      */
     private fun clearSurface() {
         surfaceHandler.removeCallbacks(hideSurfaceRunnable)
         enteredPlatform = null
+        identityDetectors.values.forEach { it.reset() }
         setDoomSurface(null)
     }
 
@@ -352,6 +532,9 @@ class ReelScrollAccessibilityService : AccessibilityService() {
         /** String extra on [ACTION_DIAG_LABEL] carrying the human label for the log banner. */
         const val EXTRA_LABEL = "label"
 
+        /** Label prefix that starts a [YtProbe] capture (zeroes counters, prints the table). */
+        const val YTPROBE_LABEL_PREFIX = "YTPROBE"
+
         /**
          * How long the overlay stays "on surface" after the last matching-surface scroll, so
          * the bubble doesn't flicker off in the gap between swipes (D28). Short by design —
@@ -366,6 +549,19 @@ class ReelScrollAccessibilityService : AccessibilityService() {
          * double-counting the entry.
          */
         const val ENTRY_GUARD_MS = 3_000L
+
+        /**
+         * Rate limit on [onContentChanged]'s identity evaluation — the guard that makes counting
+         * off `TYPE_WINDOW_CONTENT_CHANGED` affordable in a release build (D34).
+         *
+         * That event fires many times a second during Shorts playback and each evaluation costs
+         * an ancestor walk plus a bounded subtree scan. Checked BEFORE `event.source` is touched,
+         * so a flood costs one subtraction per event. 250ms (~4Hz) is an order of magnitude
+         * denser than one Short per ~2s, so no advance can slip between samples; it is NOT a
+         * correctness mechanism (that is [IdentityAdvanceDetector]'s identity comparison), which
+         * is why it can be this coarse.
+         */
+        const val IDENTITY_SCAN_MIN_MS = 250L
 
         /**
          * Master toggle for the verbose surface-tour logging (the compact `DIAG` lines +

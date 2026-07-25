@@ -1,5 +1,6 @@
 package com.scrollkiller.ui.dashboard
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
@@ -34,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -41,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.scrollkiller.R
 import com.scrollkiller.brain.BrainState
+import com.scrollkiller.brain.MascotArt
 import com.scrollkiller.stats.TimeEstimate
 
 /** The three dashboard destinations. Emoji icons keep us off the material-icons dependency. */
@@ -121,8 +125,16 @@ private fun TodayTab(total: Int, breakdown: List<PlatformCount>, padding: Paddin
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Spacer(Modifier.height(24.dp))
-        // The brain hero — the emotional core, unchanged from Phase 1.
-        Text(brain.emoji, fontSize = 88.sp)
+        // The mascot hero — the emotional core. Art comes from MascotArt (the single
+        // state→drawable mapping) as a pre-scaled bitmap for the device's density, so this
+        // is a straight blit rather than the runtime scale a single oversized PNG would cost.
+        // HEIGHT-bounded, not size(): the art is trimmed to the character and so is taller
+        // than it is wide (D37), and a square box would just reserve empty columns beside it.
+        Image(
+            painter = painterResource(MascotArt.hero(brain)),
+            contentDescription = stringResource(MascotArt.contentDescription(brain)),
+            modifier = Modifier.height(MascotArt.HERO_DP.dp),
+        )
         Text(
             text = total.toString(),
             style = MaterialTheme.typography.displayLarge,
@@ -154,8 +166,15 @@ private fun TodayTab(total: Int, breakdown: List<PlatformCount>, padding: Paddin
                     fontWeight = FontWeight.Bold,
                 )
                 breakdown.forEach { row ->
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(row.displayName, style = MaterialTheme.typography.bodyLarge)
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(row.displayName, style = MaterialTheme.typography.bodyLarge)
+                            if (row.isBeta) BetaBadge()
+                        }
                         Text(
                             row.count.toString(),
                             style = MaterialTheme.typography.bodyLarge,
@@ -195,6 +214,7 @@ private fun AppsTab(breakdown: List<PlatformCount>, padding: PaddingValues) {
                 label = row.displayName,
                 count = row.count,
                 unitNoun = row.unitNoun,
+                isBeta = row.isBeta,
                 fraction = row.count.toFloat() / max,
             )
         }
@@ -203,10 +223,23 @@ private fun AppsTab(breakdown: List<PlatformCount>, padding: PaddingValues) {
 
 /** One labeled horizontal bar: name + count above, a rounded fill on a recessive track. */
 @Composable
-private fun ScrollBar(label: String, count: Int, unitNoun: String, fraction: Float) {
+private fun ScrollBar(
+    label: String,
+    count: Int,
+    unitNoun: String,
+    isBeta: Boolean,
+    fraction: Float,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(label, style = MaterialTheme.typography.bodyLarge)
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(label, style = MaterialTheme.typography.bodyLarge)
+                if (isBeta) BetaBadge()
+            }
             Text(
                 text = if (count == 1) "1 $unitNoun" else "$count ${unitNoun}s",
                 style = MaterialTheme.typography.bodyMedium,
@@ -334,6 +367,27 @@ private fun SettingsTab(
             },
         )
     }
+}
+
+/**
+ * A small "BETA" pill shown next to a platform whose count we don't trust yet (D32).
+ *
+ * Deliberately recessive — `surfaceVariant` on `onSurfaceVariant`, not an alarm colour. It's
+ * an honesty marker ("this number is approximate and can't lock your screen"), not a warning,
+ * and it must not out-shout the count it sits beside.
+ */
+@Composable
+private fun BetaBadge() {
+    Text(
+        text = stringResource(R.string.badge_beta),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier
+            .padding(start = 6.dp)
+            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(4.dp))
+            .padding(horizontal = 5.dp, vertical = 1.dp),
+    )
 }
 
 /** A settings row: title + subtitle on the left, a control (button/switch) on the right. */

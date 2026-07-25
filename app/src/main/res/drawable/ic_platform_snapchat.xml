@@ -1,0 +1,15 @@
+<!--
+  Snapchat's row in the overlay breakdown panel (D40).
+
+  A GENERIC FLASH BOLT, not Snapchat's ghost mark. Geometry is Material Icons' `flash_on`
+  (Apache 2.0). Monochrome; tinted at runtime by BubbleView.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M7,2v11h3v9l7,-12h-4l4,-8z" />
+</vector>

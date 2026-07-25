@@ -1,6 +1,8 @@
 package com.scrollkiller.service
 
 import android.view.accessibility.AccessibilityNodeInfo
+import androidx.annotation.DrawableRes
+import com.scrollkiller.R
 
 /**
  * The short-video platforms ScrollKiller knows how to detect.
@@ -18,14 +20,24 @@ enum class Platform(val id: String) {
 }
 
 /**
- * How a platform's "reel advanced" signal is derived from raw scroll events.
+ * How a platform's "one item advanced" signal is derived from raw accessibility events.
+ * Per-platform because the platforms genuinely disagree: what works on Instagram reports
+ * nothing at all on YouTube Shorts (D34).
  *
- * - [TIME_DEBOUNCE]: collapse a fling's event burst into one advance using a
- *   quiet-gap timer (see [SwipeDetector]). This is all we use today.
- * - INDEX_CHANGE is intentionally NOT defined yet; add it in Phase 2 only if a
- *   platform turns out to expose a stable per-item index worth keying off.
+ * - [DELTA_Y_FORWARD]: the platform reports a real vertical scroll delta. A fling's event
+ *   burst is collapsed into one forward advance by [SwipeDetector]'s quiet-gap timer.
+ *   Instagram, calibrated 49/50 (D11).
+ * - [IDENTITY_CHANGE]: the platform reports NO usable scroll delta, but its
+ *   `TYPE_WINDOW_CONTENT_CHANGED` events carry a per-item identity (a channel handle /
+ *   title) that changes exactly once per advance. Count on the identity CHANGING, never on
+ *   the event — the same item re-renders dozens of times while it plays. YouTube Shorts
+ *   (D34); see [ReelIdentity] + [IdentityAdvanceDetector].
+ * - [EVENT_PULSE]: one advance per marker-matched event, time-debounced. Declared but
+ *   UNUSED — it is outcome (A) of the D31 capture decision table, kept named so a future
+ *   platform picks its strategy from a written menu rather than inventing one. Only safe
+ *   for a surface proven to emit exactly one event per advance, which no platform is today.
  */
-enum class DetectionStrategy { TIME_DEBOUNCE }
+enum class AdvanceStrategy { DELTA_Y_FORWARD, IDENTITY_CHANGE, EVENT_PULSE }
 
 /**
  * How aggressively a platform's [PlatformSpec.surfaceMarkers] gate counting. This
@@ -49,6 +61,27 @@ enum class DetectionStrategy { TIME_DEBOUNCE }
 enum class GatingMode { PASSTHROUGH, SHADOW, ENFORCED }
 
 /**
+ * How much we trust a platform's *count* — which is a different question from how much we
+ * trust its *surface markers* ([GatingMode]). A platform can be perfectly surface-gated
+ * (counts only on its Shorts player, never the feed) and still produce a number we know is
+ * wrong, because its per-item advance signal is unresolved.
+ *
+ * - [STABLE]: the count is calibrated against real swipes (Instagram: 49/50, D11). Eligible
+ *   to drive a daily limit and the full-screen block.
+ * - [BETA]: detected and counted, shown in the UI behind a "Beta" badge, but structurally
+ *   INELIGIBLE to drive a limit or a block ([PlatformSpec.blocksAtLimit] is false regardless
+ *   of [PlatformSpec.blockEnabled]). Use when the surface is proven but the advance signal
+ *   is not — a wrong number must never lock someone out of their phone.
+ *
+ * Eligibility is DERIVED from this rather than being a separate flag on purpose: "we don't
+ * trust the count" and "this count may enforce a limit" are the same decision, and splitting
+ * them into two knobs invites a future edit that sets one and forgets the other. If a Beta
+ * platform ever legitimately needs to count toward limits, split the flag deliberately and
+ * record why. See D32.
+ */
+enum class Maturity { STABLE, BETA }
+
+/**
  * Everything the service needs to detect one platform. Adding a platform is data,
  * not code: inspect its short-video view tree, then append a [PlatformSpec] to
  * [PlatformRegistry.enabled].
@@ -59,8 +92,11 @@ enum class GatingMode { PASSTHROUGH, SHADOW, ENFORCED }
  *   AndroidX hint of the same name — YouTube Shorts scrolls an
  *   `android.support.v7.widget.RecyclerView`, which must still hit the `RecyclerView`
  *   hint (D27). Storing fully-qualified names here silently broke YouTube (see D27).
- * @param minAdvanceIntervalMs quiet-gap for the debounce — the minimum time with
- *   no DOWN event before the next DOWN is treated as a new advance.
+ * @param minAdvanceIntervalMs the debounce interval, whose exact meaning follows
+ *   [advanceStrategy]. Under [AdvanceStrategy.DELTA_Y_FORWARD] it is the QUIET GAP — the
+ *   minimum time with no DOWN event before the next DOWN is treated as a new advance. Under
+ *   [AdvanceStrategy.IDENTITY_CHANGE] it is the FLOOR between two counted advances, so an
+ *   identity that flaps can't produce two counts back-to-back (D34).
  * @param surfaceMarkers `viewIdResourceName` substrings that identify the *doom
  *   surface* (the Reels/Shorts viewer), as opposed to the feed/search/profile/DMs
  *   which share the same package. A node is "on the surface" if any node in its
@@ -77,8 +113,33 @@ enum class GatingMode { PASSTHROUGH, SHADOW, ENFORCED }
  * @param displayName human label for the Apps dashboard. Kept here (not resolved via
  *   PackageManager) so we need no QUERY_ALL_PACKAGES permission — the tracked set is a
  *   small known list, so a Play-sensitive package query would be gratuitous.
+ * @param shortName 2-letter label for the platform ("IG", "YT"). Separate from [displayName]
+ *   because the bubble is a ~40dp pill over someone's video — "Instagram Reels" cannot appear
+ *   there. Same no-QUERY_ALL_PACKAGES reasoning. See D35. The overlay panel now draws [iconRes]
+ *   instead, but this is still the accessible/loggable name for the platform and the fallback
+ *   if an icon is ever missing.
+ * @param iconRes monochrome glyph for the overlay panel's bar row (D40). A GENERIC icon per
+ *   platform — a camera, a video player, a music note — NOT the platform's brand mark: the
+ *   panel is drawn inside someone else's app, and a reproduced logo is a trademark question
+ *   with no upside next to a bar that already carries the count. Tinted at draw time, so it
+ *   must be a single-colour shape. 0 means "no icon", which falls back to a generic glyph
+ *   rather than to blank space.
  * @param dailyLimit advances-per-day before the block screen escalates (when
- *   [blockEnabled]). Default 100; a user setting will override this later.
+ *   [blocksAtLimit]). Default 100; the user's Settings limit overrides it.
+ * @param maturity how much the *count* is trusted (see [Maturity]). [Maturity.BETA] makes
+ *   the platform ineligible to drive a limit or block no matter what [blockEnabled] says.
+ * @param advanceStrategy how one advance is derived from events (see [AdvanceStrategy]).
+ * @param identityAnchors `viewIdResourceName` substrings naming the PER-ITEM container to
+ *   anchor identity extraction on, for [AdvanceStrategy.IDENTITY_CHANGE] platforms. Order is
+ *   preference innermost-first; the upward walk in [ReelIdentity] naturally reaches the page
+ *   container before the recycler that holds three of them. REQUIRED (asserted in tests) for
+ *   an IDENTITY_CHANGE platform: with no anchor nothing is ever extracted, so it would count
+ *   a silent zero. See D34.
+ * @param identityTitleHints short view-ids (the part after `/`) whose text is allowed to be
+ *   used as a FALLBACK identity when no channel handle is found. Deliberately an allowlist,
+ *   not "any text": the Shorts player fires ~40 content-changes per item for subtitles, like
+ *   counts and "Auto-dubbed" badges, and accepting those as identity is exactly the overcount
+ *   the identity check exists to prevent. See D34 and [ReelIdentity.pick].
  */
 data class PlatformSpec(
     val platform: Platform,
@@ -90,11 +151,41 @@ data class PlatformSpec(
     val blockEnabled: Boolean = false,
     val unitNoun: String = "reel",
     val displayName: String = "",
+    val shortName: String = "",
+    @DrawableRes val iconRes: Int = 0,
     val dailyLimit: Int = 100,
-    val strategy: DetectionStrategy = DetectionStrategy.TIME_DEBOUNCE,
+    val advanceStrategy: AdvanceStrategy = AdvanceStrategy.DELTA_Y_FORWARD,
+    val identityAnchors: List<String> = emptyList(),
+    val identityTitleHints: List<String> = emptyList(),
+    val maturity: Maturity = Maturity.STABLE,
 ) {
     /** True when this platform drops counts off-surface (a wrong marker undercounts). */
     val enforcesSurface: Boolean get() = gating == GatingMode.ENFORCED
+
+    /**
+     * True when advances come from [AdvanceStrategy.IDENTITY_CHANGE] — i.e. from
+     * `TYPE_WINDOW_CONTENT_CHANGED` identity transitions, not from scroll deltas.
+     *
+     * Two things in the service key off this, and both must stay in step: the content-changed
+     * counting path only runs for such a platform, and D29's landing-item entry credit is
+     * SUPPRESSED for it (the identity path already counts the item you land on, so crediting
+     * again would double it). See D34.
+     */
+    val usesIdentityAdvance: Boolean get() = advanceStrategy == AdvanceStrategy.IDENTITY_CHANGE
+
+    /**
+     * May this platform's count actually trigger the full-screen block? This — NOT the raw
+     * [blockEnabled] field — is what the overlay must ask, because two independent things
+     * have to be true: the block is switched on for the platform AND we trust the number
+     * enough to enforce on it ([Maturity.STABLE]).
+     *
+     * A [Maturity.BETA] platform still counts and still shows in the UI; it just can never
+     * lock the screen on a number we've admitted is wrong. See D32.
+     */
+    val blocksAtLimit: Boolean get() = blockEnabled && maturity == Maturity.STABLE
+
+    /** True when the UI should badge this platform as Beta (its count isn't calibrated). */
+    val isBeta: Boolean get() = maturity == Maturity.BETA
 
     /**
      * Does [className] name one of this platform's scroll containers? Compared on the SIMPLE
@@ -147,6 +238,11 @@ object PlatformRegistry {
         blockEnabled = false,
         unitNoun = "reel",
         displayName = "Instagram Reels",
+        shortName = "IG",
+        iconRes = R.drawable.ic_platform_instagram,
+        // IG reports a real scrollDeltaY, so the calibrated D11 quiet-gap debounce stands.
+        // Untouched by D34 — that change is scoped to platforms whose delta is dead.
+        advanceStrategy = AdvanceStrategy.DELTA_Y_FORWARD,
     )
 
     private val youtube = PlatformSpec(
@@ -155,11 +251,16 @@ object PlatformRegistry {
         // Simple names (D27). YouTube Shorts scrolls the LEGACY support-library RecyclerView
         // (event class `android.support.v7.widget.RecyclerView`) — the old fully-qualified
         // `endsWith` hint never matched it, so Shorts counted ZERO (D27). Simple-name matching
-        // fixes that. (Whether Shorts emits a usable scroll DIRECTION is a separate question —
-        // re-tour to confirm; if it only ever emits deltaY=0/SAME, YT needs its own advance
-        // signal. See D27.)
+        // fixes that. The follow-up question D27 raised — does Shorts emit a usable scroll
+        // DIRECTION? — is now ANSWERED, and the answer is no: every Shorts scroll reports
+        // deltaY=0 → SAME (D34). These hints therefore no longer drive counting for YT; they
+        // are kept because the scroll path still runs (surface/overlay signal) and because a
+        // future YT build could start reporting a real delta.
         containerHints = listOf("ViewPager2", "RecyclerView"),
-        minAdvanceIntervalMs = 200L,
+        // FLOOR, not a quiet gap: under IDENTITY_CHANGE this is the minimum time between two
+        // COUNTED advances, so an identity that flaps can't produce two counts back-to-back.
+        // ~500ms is well under a realistic swipe cadence and well over a render flap (D34).
+        minAdvanceIntervalMs = 500L,
         // VERIFIED marker (surface tour, 2026-07-24 — D26): the full-screen Shorts player
         // recycler emits srcId=reel_recycler → MATCH(reel_recycler). Narrowed to this ONE
         // proven id: the unverified `shorts_*` guesses were dropped because the home feed
@@ -170,6 +271,27 @@ object PlatformRegistry {
         blockEnabled = false,
         unitNoun = "short",
         displayName = "YouTube Shorts",
+        shortName = "YT",
+        iconRes = R.drawable.ic_platform_youtube,
+        // D34: the D31 capture landed and it was conclusive — outcome (C). SCROLLED is dead
+        // (deltaY=0 on every Shorts event), but CONTENT_CHANGED on the Shorts player carries a
+        // per-Short identity (channel handle in the node's contentDescription, plus the title)
+        // that changes exactly ONCE per advance. So YT counts on identity CHANGE, not on events.
+        advanceStrategy = AdvanceStrategy.IDENTITY_CHANGE,
+        // Anchor innermost-first. `reel_player_page_container` is the ONE-Short container and is
+        // the right anchor; `reel_recycler` is the last-resort fallback and is deliberately
+        // second — it holds ~3 pages (prev/current/next), so anchoring there is ambiguous and
+        // only acceptable when the page container isn't in the ancestry.
+        identityAnchors = listOf("reel_player_page_container", "reel_recycler"),
+        // Fallback ONLY — the handle (`@SagarsKitchen`) is the primary identity and is what the
+        // capture proved. These title ids are NOT device-verified; that is tolerable precisely
+        // because handle-first means they are consulted only when no handle exists at all.
+        identityTitleHints = listOf("reel_title", "reel_video_title"),
+        // STILL BETA (D32/D34). The strategy above is implemented but NOT yet calibrated on a
+        // device: promotion to STABLE is gated on the two acceptance runs — 15 swipes must land
+        // 15 ±2, and 30s idle on one Short must not move the count at all. Until both pass,
+        // [blocksAtLimit] stays false: a number we haven't measured must never lock a screen.
+        maturity = Maturity.BETA,
     )
 
     private val tiktok = PlatformSpec(
@@ -191,6 +313,11 @@ object PlatformRegistry {
         blockEnabled = false,
         unitNoun = "short",
         displayName = "TikTok",
+        shortName = "TT",
+        iconRes = R.drawable.ic_platform_tiktok,
+        // BETA (D32): never toured, SHADOW counts app-wide. Mostly-FYP so it's roughly right,
+        // but "roughly right" is not a number we lock a screen on.
+        maturity = Maturity.BETA,
     )
 
     private val snapchat = PlatformSpec(
@@ -208,6 +335,12 @@ object PlatformRegistry {
         blockEnabled = false,
         unitNoun = "snap",
         displayName = "Snapchat Spotlight",
+        shortName = "SC",
+        iconRes = R.drawable.ic_platform_snapchat,
+        // BETA (D32): never toured, and unlike TikTok it's NOT mostly-Spotlight — SHADOW also
+        // counts Chat/Stories/Map scrolls as "snaps", a known OVERcount. The worst possible
+        // input to a limit, so it is barred from driving one.
+        maturity = Maturity.BETA,
     )
 
     /** Platforms detected today. Instagram is calibrated; the rest are scaffolded (D24). */
@@ -234,6 +367,14 @@ object PlatformRegistry {
     /** Spec for a known [Platform]. Every enabled platform has exactly one spec. */
     fun specFor(platform: Platform): PlatformSpec =
         enabled.first { it.platform == platform }
+
+    /**
+     * Spec for [platform], or null when it is declared in the [Platform] enum but not [enabled]
+     * — Facebook today. Use this anywhere a [Platform] arrives from data rather than from the
+     * registry: [specFor] throws there, and a rendering path is never the right place to crash.
+     */
+    fun specOrNull(platform: Platform): PlatformSpec? =
+        enabled.firstOrNull { it.platform == platform }
 
     /** Tracked packages. Kept for diagnostics and any future re-scoping. */
     val packageNames: List<String> get() = enabled.map { it.packageName }

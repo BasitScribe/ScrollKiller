@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Empty track behind one platform's bar in the bubble's expanded breakdown panel.
+    White at ~20% rather than a fixed grey: the pill it sits on is tinted with the brain
+    state's accent (green/amber/red), so a translucent white reads correctly against all
+    three, where any opaque colour would only work against one.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#33FFFFFF" />
+    <corners android:radius="3dp" />
+</shape>

@@ -4,20 +4,23 @@ package com.scrollkiller.brain
  * The app's emotional core: how fried your brain is, as a pure function of today's
  * reel count. The brain visibly degrades as the count climbs.
  *
- * Single source of truth for BOTH surfaces — the Compose Home hero and the plain
- * android.view TextView bubble derive their glyph/colour from here, so there is no
- * second mapping to drift. Deliberately free of Android/Compose imports so it stays
+ * Single source of truth for every surface — the Compose Home hero, the plain android.view
+ * TextView bubble, and the block screen all derive their state from here, so there is no
+ * second threshold to drift. Deliberately free of Android/Compose imports so it stays
  * unit-testable and usable from either render path:
  *   - Compose:  Color(state.accentArgb)
  *   - TextView: state.accentArgb.toInt()
  *
- * @param emoji glyph shown on both surfaces (count stays alongside it).
+ * The state's ARTWORK is resolved by [MascotArt], not held here: art needs `R`, and keeping
+ * this enum Android-free is what makes it testable on the JVM. This type answers "which
+ * state", MascotArt answers "what it looks like".
+ *
  * @param accentArgb 0xAARRGGBB accent colour for the state.
  */
-enum class BrainState(val emoji: String, val accentArgb: Long) {
-    HEALTHY("🧠", 0xFF2E7D32), // green
-    CRACKING("🤯", 0xFFF9A825), // amber
-    FRIED("💀", 0xFFC62828); // red
+enum class BrainState(val accentArgb: Long) {
+    HEALTHY(0xFF2E7D32), // green
+    CRACKING(0xFFF9A825), // amber
+    FRIED(0xFFC62828); // red
 
     companion object {
         /** Count at which the brain starts CRACKING (inclusive). */

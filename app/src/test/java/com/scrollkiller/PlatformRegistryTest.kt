@@ -1,6 +1,8 @@
 package com.scrollkiller
 
+import com.scrollkiller.service.AdvanceStrategy
 import com.scrollkiller.service.GatingMode
+import com.scrollkiller.service.Maturity
 import com.scrollkiller.service.Platform
 import com.scrollkiller.service.PlatformRegistry
 import org.junit.Assert.assertEquals
@@ -17,11 +19,52 @@ import org.junit.Test
 class PlatformRegistryTest {
 
     @Test
-    fun `every enabled platform has a display name and unit noun`() {
+    fun `every enabled platform has a display name, short name and unit noun`() {
         PlatformRegistry.enabled.forEach { spec ->
             assertTrue("displayName blank for ${spec.platform}", spec.displayName.isNotBlank())
             assertTrue("unitNoun blank for ${spec.platform}", spec.unitNoun.isNotBlank())
+            // The bubble's breakdown line renders shortName directly; a blank one would print
+            // a bare number with no app next to it (D35).
+            assertTrue("shortName blank for ${spec.platform}", spec.shortName.isNotBlank())
         }
+    }
+
+    @Test
+    fun `short names are distinct - the bubble breakdown must be unambiguous`() {
+        val names = PlatformRegistry.enabled.map { it.shortName }
+        assertEquals("duplicate shortName in $names", names.size, names.toSet().size)
+    }
+
+    @Test
+    fun `an IDENTITY_CHANGE platform must have identity anchors (D34)`() {
+        // Same shape of invariant as the ENFORCED/markers one below, and the same failure mode
+        // it prevents: with no anchor, ReelIdentity finds nothing, every read is UNREADABLE,
+        // and the platform silently counts ZERO instead of loudly breaking.
+        PlatformRegistry.enabled
+            .filter { it.advanceStrategy == AdvanceStrategy.IDENTITY_CHANGE }
+            .forEach { spec ->
+                assertTrue(
+                    "IDENTITY_CHANGE ${spec.platform} must have identityAnchors or it counts nothing",
+                    spec.identityAnchors.isNotEmpty(),
+                )
+            }
+    }
+
+    @Test
+    fun `each platform uses the advance strategy its capture supports (D34)`() {
+        // Instagram reports a real scrollDeltaY (calibrated 49/50, D11).
+        assertEquals(
+            AdvanceStrategy.DELTA_Y_FORWARD,
+            PlatformRegistry.specFor(Platform.INSTAGRAM).advanceStrategy,
+        )
+        // YouTube Shorts reports deltaY=0 on every scroll; its per-Short signal is the identity
+        // on CONTENT_CHANGED. Reverting this to DELTA_Y_FORWARD returns YT to counting ~zero.
+        assertEquals(
+            AdvanceStrategy.IDENTITY_CHANGE,
+            PlatformRegistry.specFor(Platform.YOUTUBE).advanceStrategy,
+        )
+        assertTrue(PlatformRegistry.specFor(Platform.YOUTUBE).usesIdentityAdvance)
+        assertFalse(PlatformRegistry.specFor(Platform.INSTAGRAM).usesIdentityAdvance)
     }
 
     @Test
@@ -44,6 +87,36 @@ class PlatformRegistryTest {
                 !spec.blockEnabled,
             )
         }
+    }
+
+    @Test
+    fun `a BETA platform can never drive a limit or block, whatever blockEnabled says (D32)`() {
+        // The invariant the whole Maturity flag exists for: we do not lock someone's screen on
+        // a count we've admitted is wrong. This must hold even if a future edit flips
+        // blockEnabled on a Beta platform, which is exactly the mistake it guards against.
+        PlatformRegistry.enabled
+            .filter { it.maturity == Maturity.BETA }
+            .forEach { spec ->
+                assertFalse(
+                    "BETA ${spec.platform} must not be eligible to block",
+                    spec.blocksAtLimit,
+                )
+                assertTrue("BETA ${spec.platform} should be badged in the UI", spec.isBeta)
+            }
+    }
+
+    @Test
+    fun `only Instagram is calibrated - everything else ships BETA (D32)`() {
+        // Instagram is the one platform calibrated against real swipes (49/50, D11).
+        assertEquals(Maturity.STABLE, PlatformRegistry.specFor(Platform.INSTAGRAM).maturity)
+        // YouTube: surface proven (D26) AND advance signal now resolved (IDENTITY_CHANGE, D34),
+        // but not yet CALIBRATED — promotion to STABLE is gated on the two on-device acceptance
+        // runs (15 swipes → 15 ±2, and 30s idle → no movement). Until those pass, the number is
+        // unmeasured, and an unmeasured number does not get to lock someone's screen.
+        assertEquals(Maturity.BETA, PlatformRegistry.specFor(Platform.YOUTUBE).maturity)
+        // TikTok / Snapchat: never toured, SHADOW counts app-wide (Snapchat overcounts).
+        assertEquals(Maturity.BETA, PlatformRegistry.specFor(Platform.TIKTOK).maturity)
+        assertEquals(Maturity.BETA, PlatformRegistry.specFor(Platform.SNAPCHAT).maturity)
     }
 
     @Test

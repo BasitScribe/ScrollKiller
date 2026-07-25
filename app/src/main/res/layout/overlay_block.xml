@@ -17,12 +17,20 @@
     android:focusable="true"
     android:focusableInTouchMode="true">
 
-    <TextView
-        android:id="@+id/block_skull"
+    <!--
+        The GUARDIAN mascot: the "stop" pose, used here and nowhere else. It is not part of
+        the count-driven HEALTHY/CRACKING/FRIED machine (see com.scrollkiller.brain.MascotArt)
+        — it means "the block is up", not "you scrolled this much". Fixed 120dp HIGH against the
+        pre-scaled drawable for this density, so it is not resized at draw time; the width
+        follows the art, which is trimmed to the character and therefore not square (D37).
+    -->
+    <ImageView
+        android:id="@+id/block_mascot"
         android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="💀"
-        android:textSize="96sp" />
+        android:layout_height="120dp"
+        android:adjustViewBounds="true"
+        android:contentDescription="@string/mascot_cd_guardian"
+        android:src="@drawable/mascot_guardian" />
 
     <TextView
         android:id="@+id/block_title"

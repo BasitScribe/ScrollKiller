@@ -22,6 +22,7 @@ androidxJunit = "1.2.1"        # instrumented-test JUnit runner
 espressoCore = "3.6.1"         # instrumented UI test framework
 ksp = "2.3.2"          # Kotlin Symbol Processing (Room codegen); tracks Kotlin version
 room = "2.7.1"                 # on-device SQLite persistence (2.7.0+ required for KSP2)
+orgJson = "20250107"           # TEST-ONLY: real org.json so the guilt-pack parser is unit-testable
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -45,6 +46,10 @@ androidx-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-toolin
 androidx-material3 = { group = "androidx.compose.material3", name = "material3" }
 
 junit = { group = "junit", name = "junit", version.ref = "junit" }
+# org.json ships in the Android framework, so it is NOT a runtime dependency — but the
+# unit-test android.jar is stubbed (every method throws), so the parser would be untestable
+# off-device without the real implementation on the test classpath. testImplementation only.
+org-json = { group = "org.json", name = "json", version.ref = "orgJson" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxJunit" }
 androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
 androidx-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }

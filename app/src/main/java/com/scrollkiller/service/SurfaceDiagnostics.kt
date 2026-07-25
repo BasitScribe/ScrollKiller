@@ -1,6 +1,5 @@
 package com.scrollkiller.service
 
-import android.os.Build
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -74,89 +73,12 @@ internal object SurfaceDiagnostics {
         )
     }
 
-    /** Depth/node budget for the EVENT_PULSE identity probe, and how many texts to collect. */
-    private const val MAX_IDENTITY_NODES = 60
-    private const val MAX_IDENTITY_TEXTS = 4
-
     /**
-     * EVENT_PULSE VERIFICATION DUMP (DEBUG only). For a scroll we've ALREADY matched to a
-     * platform's doom surface, dump the `AccessibilityEvent` fields the compact [logScroll] line
-     * drops. Original goal (find a direction/position discriminator) is CLOSED: YouTube Shorts
-     * reports every field empty/sentinel on every `reel_recycler` event (from=-1 to=-1
-     * itemCount=-1 scroll/maxScroll=0 deltaX/Y=0, no src text) — YT exposes NO direction in
-     * `TYPE_VIEW_SCROLLED`. So YT can't use IG's DELTA_Y_FORWARD; the fallback is EVENT_PULSE
-     * (count one advance per marker-matched scroll event, time-debounced) since YT fires ~1 event
-     * per swipe, not IG's 8–10-event burst.
-     *
-     * This dump now VERIFIES the pulse assumption before we ship it: it prints `identity=` — up to
-     * [MAX_IDENTITY_TEXTS] non-blank text/contentDescription strings from the scrolled subtree (a
-     * candidate per-short identity: channel handle / caption). Reading the log across a
-     * swipe→idle→tap capture answers the two questions that decide the strategy:
-     *   1. Do `YTFIELDS` lines appear while NOT swiping (video looping, like/comment taps)? If yes,
-     *      EVENT_PULSE alone would overcount idle playback.
-     *   2. Does `identity=` CHANGE between swipes but stay CONSTANT during idle? If yes, a
-     *      content-change cross-check (count only when identity changes) fixes the overcount.
-     *
-     * `getScrollDelta{X,Y}()` are API 28+; guarded (`n/a` on 26/27). We print node text ONLY here:
-     * a temporary, developer-run, DEBUG-compiled-out discovery tool on the operator's own device —
-     * it never ships (release strips it) and the release detector still reads structural metadata
-     * only. Do NOT wire these text fields into shipping detection logic verbatim; if the content
-     * cross-check ships, it keys on a specific verified viewId, not this broad text scan.
-     * [source] is owned by the caller and NOT recycled here.
+     * The YT field dump (`DIAG YTFIELDS`) that used to live here MOVED to [YtProbe], which prints
+     * a superset of it (event type, eventTime, the branch actually taken, and the running
+     * seen/counted counters) for all three YouTube event types rather than scrolls only. Keeping
+     * both would be two probes of the same thing, free to drift apart.
      */
-    fun logScrollFields(event: AccessibilityEvent, source: AccessibilityNodeInfo?) {
-        if (!BuildConfig.DEBUG) return
-        val delta = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            "deltaX=${event.scrollDeltaX} deltaY=${event.scrollDeltaY}"
-        } else {
-            "deltaX=n/a deltaY=n/a"
-        }
-        Log.d(
-            TAG,
-            "DIAG YTFIELDS from=${event.fromIndex} to=${event.toIndex} itemCount=${event.itemCount} " +
-                "scrollX=${event.scrollX} scrollY=${event.scrollY} " +
-                "maxScrollX=${event.maxScrollX} maxScrollY=${event.maxScrollY} $delta " +
-                "srcDesc=\"${trim(source?.contentDescription)}\" srcText=\"${trim(source?.text)}\" " +
-                "identity=\"${collectSurfaceText(source)}\"",
-        )
-    }
-
-    /**
-     * Bounded DFS from [source] collecting up to [MAX_IDENTITY_TEXTS] non-blank text/description
-     * strings — a candidate per-short identity for the EVENT_PULSE-vs-content-change decision.
-     * Children we allocate are recycled; [source] is the caller's and is NOT recycled here.
-     */
-    private fun collectSurfaceText(source: AccessibilityNodeInfo?): String {
-        if (source == null) return "—"
-        val out = ArrayList<String>(MAX_IDENTITY_TEXTS)
-        collectText(source, intArrayOf(MAX_IDENTITY_NODES), depth = 0, out = out)
-        return if (out.isEmpty()) "—" else out.joinToString(" | ")
-    }
-
-    private fun collectText(
-        node: AccessibilityNodeInfo,
-        budget: IntArray,
-        depth: Int,
-        out: MutableList<String>,
-    ) {
-        if (budget[0] <= 0 || depth > MAX_DEPTH || out.size >= MAX_IDENTITY_TEXTS) return
-        budget[0]--
-        val label = node.contentDescription?.toString()?.takeIf { it.isNotBlank() }
-            ?: node.text?.toString()?.takeIf { it.isNotBlank() }
-        if (label != null) out.add(trim(label))
-        for (i in 0 until node.childCount) {
-            if (budget[0] <= 0 || out.size >= MAX_IDENTITY_TEXTS) break
-            val child = node.getChild(i) ?: continue
-            collectText(child, budget, depth + 1, out)
-            child.recycle()
-        }
-    }
-
-    /** Truncate a CharSequence for the discovery dump so a long caption can't flood one line. */
-    private fun trim(cs: CharSequence?): String {
-        val s = cs?.toString() ?: return "—"
-        return if (s.length > 40) s.take(40) + "…" else s
-    }
 
     /**
      * One compact line for a `TYPE_WINDOW_STATE_CHANGED` event (the activity/fragment swap

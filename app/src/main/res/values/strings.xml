@@ -67,16 +67,28 @@
     <string name="brain_state_cracking">Cracking</string>
     <string name="brain_state_fried">Fried</string>
 
+    <!-- Mascot screen-reader descriptions (see com.scrollkiller.brain.MascotArt). The mascot IS
+         the severity signal, so these describe the state rather than saying "image". -->
+    <string name="mascot_cd_healthy">Your brain is healthy</string>
+    <string name="mascot_cd_cracking">Your brain is starting to crack</string>
+    <string name="mascot_cd_fried">Your brain is fried</string>
+    <string name="mascot_cd_guardian">Your brain is blocking reels</string>
+
     <!-- Full-screen block screen (Phase 2). Clearly ScrollKiller's own UI. -->
     <string name="block_title">Reels are Locked</string>
     <string name="block_exit">Exit</string>
     <string name="block_unlock">Unlock</string>
-    <!-- Guilt lines: one is picked at show time. TEMPORARY: the guilt_pack.json loader
-         (its own Phase-2 checkbox) with weighted no-repeat rotation replaces this array. -->
-    <string-array name="block_guilt_lines">
-        <item>You\'ve hit your limit. Your brain will thank you.</item>
-        <item>That\'s enough reels for today. Go touch grass.</item>
-        <item>The feed will still be there tomorrow. Your time won\'t.</item>
-        <item>You came here to relax, not to disappear. Take a break.</item>
-    </string-array>
+    <!-- NOTE: guilt lines are NOT string resources. They live in assets/guilt_pack.json so the
+         pack can be categorised, weighted, and later swapped from a server without an app
+         update (D33) — a <string-array> can do none of those. See com.scrollkiller.guilt. -->
+
+    <!-- Badge next to a platform whose count isn't calibrated yet (D32). Short by design:
+         it sits inline next to the app name. -->
+    <string name="badge_beta">BETA</string>
+
+    <!-- Top line of the overlay bubble's expanded breakdown panel (D37). %1$d is today's grand
+         total, %2$s a minutes value like "4.8". Deliberately has no unit noun: the total spans
+         platforms that count "reels", "shorts" and "snaps", so naming one of them would be
+         wrong. Terse because it sits in a ~200dp panel over someone's video. -->
+    <string name="overlay_panel_total">%1$d in ~%2$s min</string>
 </resources>

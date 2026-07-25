@@ -1,0 +1,16 @@
+<!--
+  Fallback glyph for a platform whose row has no icon of its own (D40).
+
+  Reached when a PlatformSpec ships without an `iconRes` — so adding a platform can never draw a
+  blank space where a label used to be, and the panel's rows stay aligned. Geometry is Material
+  Icons' `apps` (Apache 2.0). Monochrome; tinted at runtime by BubbleView.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M4,8h4V4H4v4zM10,20h4v-4h-4v4zM4,20h4v-4H4v4zM4,14h4v-4H4v4zM10,14h4v-4h-4v4zM16,4v4h4V4h-4zM10,8h4V4h-4v4zM16,14h4v-4h-4v4zM16,20h4v-4h-4v4z" />
+</vector>

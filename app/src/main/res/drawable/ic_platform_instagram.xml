@@ -1,0 +1,24 @@
+<!--
+  Instagram's row in the overlay breakdown panel (D40).
+
+  A GENERIC CAMERA, not Instagram's mark. Deliberately: the panel ships inside a third-party
+  app's UI, so a reproduced brand logo is a trademark question we have no reason to open when a
+  camera reads just as clearly next to a bar labelled with the count. Geometry is Material
+  Icons' `photo_camera` (Apache 2.0). Monochrome and tinted at runtime by BubbleView, so it
+  inherits the panel's text colour rather than carrying a colour of its own.
+
+  If official marks are ever wanted here, drop the licensed asset in at this filename — nothing
+  else needs to change; PlatformSpec.iconRes already points at it.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M9,2L7.17,4H4C2.9,4 2,4.9 2,6v12c0,1.1 0.9,2 2,2h16c1.1,0 2,-0.9 2,-2V6c0,-1.1 -0.9,-2 -2,-2h-3.17L15,2H9zM12,17c-2.76,0 -5,-2.24 -5,-5s2.24,-5 5,-5s5,2.24 5,5s-2.24,5 -5,5z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,8.8c-1.77,0 -3.2,1.43 -3.2,3.2s1.43,3.2 3.2,3.2s3.2,-1.43 3.2,-3.2s-1.43,-3.2 -3.2,-3.2z" />
+</vector>
