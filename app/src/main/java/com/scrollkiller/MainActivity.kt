@@ -7,6 +7,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.scrollkiller.guilt.GuiltLines
 import com.scrollkiller.ui.dashboard.DashboardScreen
 import com.scrollkiller.ui.dashboard.DashboardViewModel
 import com.scrollkiller.ui.onboarding.AccessibilityStatus
@@ -36,6 +37,9 @@ class MainActivity : ComponentActivity() {
     private val canDrawOverlays = mutableStateOf(false)
     private val overlayStepDismissed = mutableStateOf(false)
 
+    /** The dashboard's ViewModel once composed, so [onResume] can refresh its health (D51). */
+    private var dashboard: DashboardViewModel? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()  // draw behind the system bars (modern Android look)
@@ -43,6 +47,12 @@ class MainActivity : ComponentActivity() {
         // Seed before first composition so the correct screen shows immediately.
         refreshPermissionState()
         overlayStepDismissed.value = isOverlayStepDismissed()
+
+        // App open = a fresh guilt line, even if the count hasn't moved a tier since last time
+        // (D41). onCreate, NOT onResume: an open is a new look at your number, whereas a resume
+        // is also a dismissed notification shade — and swapping the sentence someone is halfway
+        // through reading is worse than repeating it.
+        GuiltLines.onAppOpen()
 
         setContent {
             ScrollKillerTheme {
@@ -56,6 +66,10 @@ class MainActivity : ComponentActivity() {
                     )
                     else -> {
                         val dashboardViewModel: DashboardViewModel = viewModel()
+                        // Held so onResume can refresh permission health on it (D51) — the same
+                        // return-from-Settings mechanism the two flags above already use, extended
+                        // to the banner so re-granting flips it without a restart.
+                        dashboard = dashboardViewModel
                         DashboardScreen(
                             viewModel = dashboardViewModel,
                             accessibilityEnabled = accessibilityEnabled.value,
@@ -73,8 +87,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Re-check on return from Settings (or any resume) and recompose.
+        // Re-check on return from Settings (or any resume) and recompose. Android gives no
+        // callback for "a permission was revoked", so resume is the signal — which is exactly why
+        // the app could run for a whole session with the block dead and never notice (D51).
         refreshPermissionState()
+        dashboard?.refreshHealth()
     }
 
     private fun refreshPermissionState() {

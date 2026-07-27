@@ -4,28 +4,25 @@ import android.content.Context
 import android.util.Log
 
 /**
- * The app's single source of guilt lines: loads the bundled pack once, holds the per-surface
- * rotations, and hands out one line at a time.
+ * The app's source of guilt CONTENT: loads the bundled pack once and holds whichever pack is
+ * currently active. It does not choose lines — that is [GuiltLines] / [GuiltSelector].
  *
- * Replaces the `R.array.block_guilt_lines` string-array — a static list picked from with
- * `.random()`, which had no categories, no weighting, and re-showed the same line back-to-back
- * roughly one time in four.
+ * The split is deliberate (D41). This object used to do both, and once selection grew tiers,
+ * daily decks, a locale filter and a cross-surface pin, "loads a file" and "decides what the app
+ * says" were plainly two jobs. Keeping the loader a pack source also means the selector can
+ * detect a hot-swap by comparing [GuiltPack.identity] instead of the loader having to know who
+ * its consumers are.
  *
- * REMOTE-CONFIG SEAM (D33): the pack is bundled today, but nothing here assumes that. The
- * bundled asset is just the FIRST source; [install] accepts an already-parsed pack and swaps
+ * REMOTE-CONFIG SEAM (D33, intact): the pack is bundled today, but nothing here assumes that.
+ * The bundled asset is just the FIRST source; [install] accepts an already-parsed pack and swaps
  * it in atomically at runtime, so the Phase-3 backend can add a `GET /guilt_pack` fetcher that
  * calls `GuiltPackParser.parse(body)` → [install] and changes the app's voice with no store
- * release. That is why [install] is a public entry point with a revision check even though
- * only tests call it today: the alternative is discovering later that the loader was written
- * around a `context.assets` assumption and rewriting it.
+ * release. That is why [install] is a public entry point with a revision check even though only
+ * tests call it today.
  *
  * Object (not injected): matches the app's manual-graph, no-DI convention (see SettingsPrefs).
- * SESSION SCOPE: rotation state lives for the process lifetime, which for an always-bound
- * accessibility service is the right meaning of "session" — the user does not see a repeat
- * until the pack has cycled.
  *
- * Threading: called from the service main thread. [pack] is @Volatile so a future background
- * fetch calling [install] publishes safely.
+ * Threading: [pack] is @Volatile so a future background fetch calling [install] publishes safely.
  */
 object GuiltPackLoader {
 
@@ -34,12 +31,6 @@ object GuiltPackLoader {
 
     @Volatile
     private var pack: GuiltPack? = null
-
-    /** One independent rotation per surface, so the block and the bubble don't share a cycle. */
-    private val rotations = HashMap<GuiltSurface, GuiltRotation>()
-
-    /** Last id handed out on ANY surface — the cross-surface back-to-back guard. */
-    private var lastShownId: String? = null
 
     /**
      * The active pack, loading the bundled asset on first use. Falls back to
@@ -52,7 +43,11 @@ object GuiltPackLoader {
         if (loaded == null) {
             Log.w(TAG, "guilt pack asset missing or unparseable; using fallback")
         } else {
-            Log.d(TAG, "guilt pack loaded: ${loaded.packId} rev${loaded.revision}, ${loaded.lines.size} lines")
+            Log.d(
+                TAG,
+                "guilt pack loaded: ${loaded.identity}, ${loaded.lines.size} lines, " +
+                    "locales=${loaded.locales.joinToString { it.tag }}",
+            )
         }
         val result = loaded ?: GuiltPack.FALLBACK
         pack = result
@@ -60,27 +55,15 @@ object GuiltPackLoader {
     }
 
     /**
-     * One line for [surface]: weighted-random, not repeating within the session until the
-     * surface's pool has cycled, and never immediately repeating a line another surface just
-     * showed. Never returns null — falls back through [GuiltPack.linesFor]'s own fallbacks and
-     * finally to a hard-coded string, because the block screen must never render blank.
-     */
-    fun line(context: Context, surface: GuiltSurface): String {
-        val active = pack(context)
-        val rotation = rotations.getOrPut(surface) { GuiltRotation() }
-        val chosen = rotation.pick(active.linesFor(surface), avoid = lastShownId)
-            ?: return GuiltPack.FALLBACK.lines.first().text
-        lastShownId = chosen.id
-        return chosen.text
-    }
-
-    /**
      * Swap in a new pack at runtime — the hot-swap entry point a future remote fetcher uses.
      *
      * Accepts only a HIGHER [GuiltPack.revision] than the active pack: a stale cached response
-     * or an out-of-order retry must not downgrade the user's content. Rotation state is reset
-     * because the new pack's ids may not overlap the old one's, which would leave stale
-     * no-repeat entries suppressing nothing (or, worse, nothing at all).
+     * or an out-of-order retry must not downgrade the user's content.
+     *
+     * Selection state (decks, rotations, the pinned line) is NOT reset from here — [GuiltSelector]
+     * notices the [GuiltPack.identity] change on its next call and drops its own state. That
+     * keeps this method's contract to exactly "which content is live", which is also what makes
+     * it safe to call from a background fetch.
      *
      * @return true if the pack was installed.
      */
@@ -90,17 +73,13 @@ object GuiltPackLoader {
         if (candidate.revision <= pack(context).revision) return false
 
         pack = candidate
-        rotations.values.forEach { it.reset() }
-        lastShownId = null
-        Log.d(TAG, "guilt pack installed: ${candidate.packId} rev${candidate.revision}")
+        Log.d(TAG, "guilt pack installed: ${candidate.identity}")
         return true
     }
 
-    /** Drop all cached state. Test hook; also correct after a "clear all data". */
+    /** Drop the cached pack. Test hook; also correct after a "clear all data". */
     fun reset() {
         pack = null
-        rotations.clear()
-        lastShownId = null
     }
 
     private fun readAsset(context: Context): String? = try {

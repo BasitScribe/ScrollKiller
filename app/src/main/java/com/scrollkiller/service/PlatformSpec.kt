@@ -105,9 +105,9 @@ enum class Maturity { STABLE, BETA }
  * @param gating how [surfaceMarkers] gate counting for this platform (see [GatingMode]).
  * @param blockEnabled whether the full-screen block screen may fire for this platform.
  *   SEPARATE from [gating] on purpose: a platform can count on its surface long before
- *   we trust its markers enough to blackout the screen at the limit. Ships FALSE for
- *   every platform — the block stays dormant until a device surface tour verifies the
- *   markers and this is flipped per-platform (preserves D19's "never the feed"). See D24.
+ *   we trust its markers enough to blackout the screen at the limit. TRUE for Instagram only
+ *   (D49, after the D26 marker tour); false everywhere else, so the block stays dormant on a
+ *   platform until its surface is device-verified (preserves D19's "never the feed"). See D24.
  * @param unitNoun what one advance is called for this platform ("reel", "short", …).
  *   Stored on each raw [com.scrollkiller.data.db.ScrollEvent] and shown in the UI.
  * @param displayName human label for the Apps dashboard. Kept here (not resolved via
@@ -115,17 +115,25 @@ enum class Maturity { STABLE, BETA }
  *   small known list, so a Play-sensitive package query would be gratuitous.
  * @param shortName 2-letter label for the platform ("IG", "YT"). Separate from [displayName]
  *   because the bubble is a ~40dp pill over someone's video — "Instagram Reels" cannot appear
- *   there. Same no-QUERY_ALL_PACKAGES reasoning. See D35. The overlay panel now draws [iconRes]
- *   instead, but this is still the accessible/loggable name for the platform and the fallback
- *   if an icon is ever missing.
+ *   there. Same no-QUERY_ALL_PACKAGES reasoning. See D35. Still the loggable/accessible short
+ *   form; the overlay panel draws [brandName] beside [iconRes].
+ * @param brandName the app's plain name ("Instagram", "YouTube") for the overlay panel's bar
+ *   rows. A THIRD name field, and each of the three earns its place at a different size:
+ *   [displayName] ("Instagram Reels") names the surface on the dashboard, [shortName] ("IG") is
+ *   two characters for anywhere text barely fits, and this is what a person calls the app —
+ *   which is what the panel needs, because [displayName] does not fit a ~240dp overlay at 11sp
+ *   and "IG" proved illegible there (D40). It is a WORD, never a logo: naming an app is
+ *   nominative use, reproducing its mark inside its own UI is not (D44).
  * @param iconRes monochrome glyph for the overlay panel's bar row (D40). A GENERIC icon per
  *   platform — a camera, a video player, a music note — NOT the platform's brand mark: the
  *   panel is drawn inside someone else's app, and a reproduced logo is a trademark question
  *   with no upside next to a bar that already carries the count. Tinted at draw time, so it
  *   must be a single-colour shape. 0 means "no icon", which falls back to a generic glyph
- *   rather than to blank space.
- * @param dailyLimit advances-per-day before the block screen escalates (when
- *   [blocksAtLimit]). Default 100; the user's Settings limit overrides it.
+ *   rather than to blank space. The slot stays as-is for the day licensed marks arrive.
+ * @param dailyLimit advances-per-day before the block screen escalates (when [blocksAtLimit]).
+ *   The DEFAULT only — [com.scrollkiller.data.SettingsPrefs.dailyLimit] is what the overlay
+ *   actually reads, and this is the value it falls back to before the user has ever touched the
+ *   slider. See [BlockLimits] for the number and the range it may be moved within.
  * @param maturity how much the *count* is trusted (see [Maturity]). [Maturity.BETA] makes
  *   the platform ineligible to drive a limit or block no matter what [blockEnabled] says.
  * @param advanceStrategy how one advance is derived from events (see [AdvanceStrategy]).
@@ -152,8 +160,9 @@ data class PlatformSpec(
     val unitNoun: String = "reel",
     val displayName: String = "",
     val shortName: String = "",
+    val brandName: String = "",
     @DrawableRes val iconRes: Int = 0,
-    val dailyLimit: Int = 100,
+    val dailyLimit: Int = BlockLimits.DEFAULT_DAILY_LIMIT,
     val advanceStrategy: AdvanceStrategy = AdvanceStrategy.DELTA_Y_FORWARD,
     val identityAnchors: List<String> = emptyList(),
     val identityTitleHints: List<String> = emptyList(),
@@ -232,13 +241,22 @@ object PlatformRegistry {
         // DMs (sticky_header_list / bottom_sheet_container), Stories (reel_viewer_* — internally
         // "reels", which is exactly why we key on "clips_viewer" ONLY, not "reel_viewer"). The
         // discriminator is proven and non-colliding, so IG is ENFORCED: it counts ONLY on the
-        // reel surface. blockEnabled stays false until a limit/challenge session enables it.
+        // reel surface.
         surfaceMarkers = listOf("clips_viewer"),
         gating = GatingMode.ENFORCED,
-        blockEnabled = false,
+        // LIVE as of D49 — the first and only platform allowed to cover someone's screen. Both
+        // preconditions the block has been dormant on since D19 are met, and BOTH are required:
+        //   1. the surface marker above is device-TOURED and locked (D26), so the block can only
+        //      ever land on the reel player — never the feed, DMs, profile grid or Stories; and
+        //   2. the count is CALIBRATED 49/50 (D11), which is what keeps `maturity` at STABLE and
+        //      therefore what makes [blocksAtLimit] true rather than just [blockEnabled].
+        // Flipping this for a platform missing either one is the mistake `PlatformRegistryTest`
+        // exists to catch. YouTube/TikTok/Snapchat are BETA and stay false on both counts.
+        blockEnabled = true,
         unitNoun = "reel",
         displayName = "Instagram Reels",
         shortName = "IG",
+        brandName = "Instagram",
         iconRes = R.drawable.ic_platform_instagram,
         // IG reports a real scrollDeltaY, so the calibrated D11 quiet-gap debounce stands.
         // Untouched by D34 — that change is scoped to platforms whose delta is dead.
@@ -272,6 +290,7 @@ object PlatformRegistry {
         unitNoun = "short",
         displayName = "YouTube Shorts",
         shortName = "YT",
+        brandName = "YouTube",
         iconRes = R.drawable.ic_platform_youtube,
         // D34: the D31 capture landed and it was conclusive — outcome (C). SCROLLED is dead
         // (deltaY=0 on every Shorts event), but CONTENT_CHANGED on the Shorts player carries a
@@ -314,6 +333,7 @@ object PlatformRegistry {
         unitNoun = "short",
         displayName = "TikTok",
         shortName = "TT",
+        brandName = "TikTok",
         iconRes = R.drawable.ic_platform_tiktok,
         // BETA (D32): never toured, SHADOW counts app-wide. Mostly-FYP so it's roughly right,
         // but "roughly right" is not a number we lock a screen on.
@@ -336,6 +356,7 @@ object PlatformRegistry {
         unitNoun = "snap",
         displayName = "Snapchat Spotlight",
         shortName = "SC",
+        brandName = "Snapchat",
         iconRes = R.drawable.ic_platform_snapchat,
         // BETA (D32): never toured, and unlike TikTok it's NOT mostly-Spotlight — SHADOW also
         // counts Chat/Stories/Map scrolls as "snaps", a known OVERcount. The worst possible

@@ -6,11 +6,17 @@ import androidx.lifecycle.viewModelScope
 import com.scrollkiller.ScrollKillerApp
 import com.scrollkiller.data.SettingsPrefs
 import com.scrollkiller.data.TodaySummary
+import com.scrollkiller.guilt.GuiltLines
+import com.scrollkiller.guilt.GuiltLocale
+import com.scrollkiller.permission.PermissionHealth
+import com.scrollkiller.permission.PermissionHealthReader
 import com.scrollkiller.service.Platform
 import com.scrollkiller.service.PlatformRegistry
+import com.scrollkiller.service.PlatformSpec
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -77,6 +83,54 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /** Which guilt pack the user hears (D43). One option today; the plumbing takes many. */
+    private val _guiltLocale = MutableStateFlow(SettingsPrefs.guiltLocale(app))
+
+    val guiltLocale: StateFlow<GuiltLocale> = _guiltLocale
+
+    /**
+     * The line the app is currently saying, or NULL below the first tier — in which case Home
+     * shows nothing at all, which is the designed silence and not a loading state (D41).
+     *
+     * The SAME line the bubble's nudge and expanded panel are showing at this moment: all three
+     * read [GuiltLines.current], which pins one draw per (tier, day, pack, locale). Home does
+     * not get its own rotation.
+     *
+     * Combined with [_guiltLocale] rather than mapped from [summary] alone so that changing the
+     * pack in Settings re-emits — the count has not changed, so nothing else would wake this up.
+     */
+    val guiltLine: StateFlow<String?> = combine(summary, _guiltLocale) { today, _ ->
+        GuiltLines.current(app, today.total)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    fun setGuiltLocale(locale: GuiltLocale) {
+        SettingsPrefs.setGuiltLocale(getApplication(), locale)
+        // Decks, no-repeat history and the pinned line all describe the OLD pool — drop them
+        // before the re-emission below asks for a line in the new one.
+        GuiltLines.onLocaleChanged()
+        _guiltLocale.value = locale
+    }
+
+    private val _health = MutableStateFlow(PermissionHealthReader.of(app))
+
+    /**
+     * Whether the app can actually do its job right now (D51). The SAME model the block path
+     * reads, so Home cannot claim to be healthy while the overlay is silently being refused.
+     *
+     * Not a Flow of anything observable — Android gives no callback for "the user revoked a
+     * permission" — so it is refreshed explicitly by [refreshHealth] on every resume.
+     */
+    val health: StateFlow<PermissionHealth> = _health
+
+    /**
+     * Re-read the permission state. Called from `MainActivity.onResume`, which is what makes
+     * returning from the system settings screen flip the banner to healthy with no restart — the
+     * same mechanism the accessibility onboarding step has always used.
+     */
+    fun refreshHealth() {
+        _health.value = PermissionHealthReader.of(getApplication())
+    }
+
     private val _bubbleEnabled = MutableStateFlow(SettingsPrefs.isBubbleEnabled(app))
 
     /** Whether the floating bubble is allowed (Settings toggle; read by the overlay). */
@@ -87,8 +141,46 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
         _bubbleEnabled.value = enabled
     }
 
-    /** Settings → Clear data: wipe aggregates + raw events. */
+    /**
+     * The platforms whose count may actually raise the block screen, and therefore the ones a
+     * daily limit means anything for (D49). Instagram alone today.
+     *
+     * Derived from [PlatformSpec.blocksAtLimit] rather than listed, so promoting a platform to
+     * STABLE and switching its block on makes its slider appear with no UI change — and so a
+     * BETA platform can never get a limit control implying it will enforce one.
+     */
+    val blockingPlatforms: List<PlatformSpec> =
+        PlatformRegistry.enabled.filter { it.blocksAtLimit }
+
+    private val _dailyLimits = MutableStateFlow(
+        blockingPlatforms.associate { it.platform to SettingsPrefs.dailyLimit(app, it.platform) },
+    )
+
+    /** Each blocking platform's current daily limit, keyed by platform. */
+    val dailyLimits: StateFlow<Map<Platform, Int>> = _dailyLimits
+
+    /**
+     * Move a platform's limit. Written through immediately (no Apply button) because the overlay
+     * re-reads the pref on every count emission, so the new limit is live on the very next reel
+     * — a limit that took effect "next time you open Instagram" would look broken.
+     */
+    fun setDailyLimit(platform: Platform, value: Int) {
+        SettingsPrefs.setDailyLimit(getApplication(), platform, value)
+        _dailyLimits.value = _dailyLimits.value +
+            (platform to SettingsPrefs.dailyLimit(getApplication(), platform))
+    }
+
+    /**
+     * Settings → Clear data: wipe aggregates, raw events, and the guilt-line history.
+     *
+     * The history goes too because it is the user's data about them and "delete every stored
+     * count on this device" should not quietly keep a week of what they were shown (D47).
+     */
     fun clearData() {
+        GuiltLines.onDataCleared(getApplication())
+        // Any running "5 more minutes" goes with the counts: the reprieve is a fact about how
+        // much the user scrolled today, and today is being deleted (D49).
+        SettingsPrefs.clearGrace(getApplication())
         viewModelScope.launch { repository.clearAll() }
     }
 }

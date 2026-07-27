@@ -18,7 +18,7 @@ import kotlin.random.Random
 class GuiltRotationTest {
 
     private fun line(id: String, weight: Int = 1) =
-        GuiltLine(id, GuiltCategory.ROAST, weight, "text-$id")
+        GuiltLine(id, GuiltCategory.ROAST, intensity = 1, weight = weight, text = "text-$id")
 
     @Test
     fun `empty candidates yield null rather than throwing`() {

@@ -18,12 +18,14 @@ Read docs/architecture.mermaid — full component graph. Summary: device is sour
 3. Leaderboard reads cached 30s. Never hit Redis per scroll.
 4. Raw sync events pruned >7d; daily aggregates kept forever.
 5. Play policy: AccessibilityService needs disclosure dialog before enabling. Never skip.
+6. The block screen is ALWAYS exitable. Exit and Back must leave the blocked app from every block state, and dismissal must never depend on the count, a timer, the network, or a challenge succeeding. The overlay tears down when the user leaves the tracked app. A block that cannot be dismissed is a P0 — no product reason outranks this.
 
 ## Docs map (read only what the task needs)
 - docs/architecture.mermaid — system graph
 - docs/SCHEMA.md — DB tables + sync flow
 - docs/ROADMAP.md — phases, current status
 - docs/DECISIONS.md — why-log (append-only ADRs)
+- docs/STORE_COPY.md — claims the listing may NOT make, and why (gate before Play submission)
 
 ## Session protocol
 One phase per session. Start: read ROADMAP current phase. End: update ROADMAP status + append any new decision to DECISIONS.md. /clear between phases.

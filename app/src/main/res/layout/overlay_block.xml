@@ -5,8 +5,18 @@
     or system chrome (Play policy / never-deceive). Fixed dark colors because it draws
     over another app, outside our Compose theme (same rationale as overlay_bubble_bg).
     The user is never trapped: Exit leaves the app and Back maps to Exit.
+
+    TWO PANELS, one window (D50). block_panel is the block itself; challenge_panel is the
+    physical unlock. Exactly one is VISIBLE at a time and the ROOT never goes GONE — a child
+    toggle inside an already-attached window, the same shape as the bubble's expand (D37),
+    so starting a challenge is not a second window and not a window rebuild.
+
+    BOTH panels carry their own Exit. That is not duplication for its own sake: a
+    challenge screen offering only "Cancel" would be a second screen the user has to escape
+    before they can escape, which is precisely what invariant 6 forbids.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/block_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -17,54 +27,141 @@
     android:focusable="true"
     android:focusableInTouchMode="true">
 
-    <!--
-        The GUARDIAN mascot: the "stop" pose, used here and nowhere else. It is not part of
-        the count-driven HEALTHY/CRACKING/FRIED machine (see com.scrollkiller.brain.MascotArt)
-        — it means "the block is up", not "you scrolled this much". Fixed 120dp HIGH against the
-        pre-scaled drawable for this density, so it is not resized at draw time; the width
-        follows the art, which is trimmed to the character and therefore not square (D37).
-    -->
-    <ImageView
-        android:id="@+id/block_mascot"
-        android:layout_width="wrap_content"
-        android:layout_height="120dp"
-        android:adjustViewBounds="true"
-        android:contentDescription="@string/mascot_cd_guardian"
-        android:src="@drawable/mascot_guardian" />
-
-    <TextView
-        android:id="@+id/block_title"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:text="@string/block_title"
-        android:textColor="#FFFFFFFF"
-        android:textSize="28sp"
-        android:textStyle="bold" />
-
-    <TextView
-        android:id="@+id/block_guilt"
+    <!-- ===================== THE BLOCK ===================== -->
+    <LinearLayout
+        android:id="@+id/block_panel"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
+        android:orientation="vertical"
+        android:gravity="center">
+
+        <!--
+            The GUARDIAN mascot: the "stop" pose, used here and nowhere else. It is not part of
+            the count-driven HEALTHY/CRACKING/FRIED machine (see com.scrollkiller.brain.MascotArt)
+            — it means "the block is up", not "you scrolled this much". Fixed 120dp HIGH against
+            the pre-scaled drawable for this density, so it is not resized at draw time; the width
+            follows the art, which is trimmed to the character and therefore not square (D37).
+        -->
+        <ImageView
+            android:id="@+id/block_mascot"
+            android:layout_width="wrap_content"
+            android:layout_height="120dp"
+            android:adjustViewBounds="true"
+            android:contentDescription="@string/mascot_cd_guardian"
+            android:src="@drawable/mascot_guardian" />
+
+        <TextView
+            android:id="@+id/block_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/block_title"
+            android:textColor="#FFFFFFFF"
+            android:textSize="28sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/block_guilt"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:gravity="center"
+            android:textColor="#CCFFFFFF"
+            android:textSize="16sp"
+            tools:ignore="HardcodedText" />
+
+        <!--
+            Exit is FIRST, and that ordering is load-bearing twice over. Visually it makes leaving
+            the primary action, which is what an anti-doomscroll app should be nudging toward. More
+            importantly it is the accessibility traversal order: TalkBack reaches the way OUT before
+            either way to keep scrolling, so a screen-reader user is never hunting for the exit on
+            an overlay covering someone else's app (CLAUDE.md invariant 6).
+
+            No button takes focus in touch mode — the ROOT keeps it, because that is the only
+            way its Back-key listener runs (see BlockScreenController).
+        -->
+        <Button
+            android:id="@+id/block_exit"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="40dp"
+            android:text="@string/block_exit" />
+
+        <!--
+            Both texts are set in code, formatted from BlockLimits.GRACE_MINUTES and
+            CHALLENGE_GRACE_MINUTES, so the promise on each button and the reprieve actually
+            granted are the same number by construction. The challenge button is HIDDEN unless
+            the device has a step sensor and the permission is held (MotionStatus) — a control
+            that cannot do its job has no business on a screen covering another app.
+        -->
+        <Button
+            android:id="@+id/block_snooze"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp" />
+
+        <Button
+            android:id="@+id/block_challenge"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:visibility="gone" />
+
+    </LinearLayout>
+
+    <!-- ===================== THE CHALLENGE ===================== -->
+    <LinearLayout
+        android:id="@+id/challenge_panel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
         android:gravity="center"
-        android:textColor="#CCFFFFFF"
-        android:textSize="16sp"
-        tools:ignore="HardcodedText"
-        xmlns:tools="http://schemas.android.com/tools" />
+        android:visibility="gone">
 
-    <Button
-        android:id="@+id/block_unlock"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="40dp"
-        android:text="@string/block_unlock" />
+        <com.scrollkiller.challenge.ProgressRingView
+            android:id="@+id/challenge_ring"
+            android:layout_width="180dp"
+            android:layout_height="180dp" />
 
-    <Button
-        android:id="@+id/block_exit"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:text="@string/block_exit" />
+        <!-- Prompt text is set in code from the spec's promptRes with its target as the format
+             argument, so "Walk 20 steps" cannot disagree with the 20 the engine counts to. -->
+        <TextView
+            android:id="@+id/challenge_prompt"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:gravity="center"
+            android:textColor="#FFFFFFFF"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            tools:ignore="HardcodedText" />
+
+        <TextView
+            android:id="@+id/challenge_reward"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:gravity="center"
+            android:textColor="#CCFFFFFF"
+            android:textSize="15sp"
+            tools:ignore="HardcodedText" />
+
+        <!-- Exit first here too, for the same traversal reason. Cancel returns to the block;
+             Exit leaves Instagram. Both must be reachable without completing anything. -->
+        <Button
+            android:id="@+id/challenge_exit"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="40dp"
+            android:text="@string/block_exit" />
+
+        <Button
+            android:id="@+id/challenge_cancel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="@string/challenge_cancel" />
+
+    </LinearLayout>
 
 </LinearLayout>

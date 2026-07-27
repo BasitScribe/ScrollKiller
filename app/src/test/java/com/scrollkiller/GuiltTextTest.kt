@@ -1,0 +1,131 @@
+package com.scrollkiller
+
+import com.scrollkiller.guilt.GuiltText
+import com.scrollkiller.stats.TimeEstimate
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Test
+
+/**
+ * The count-token model and, more importantly, the guard that keeps numbers OUT of content.
+ *
+ * The bug being fenced off (D47): lines were authored with the number baked in ("Fifty already"),
+ * so once the D46 cadence started re-showing them all day the app announced "one-fifty" at 312
+ * scrolls, contradicting its own counter an inch away.
+ */
+class GuiltTextTest {
+
+    /* --- rendering ------------------------------------------------------------------- */
+
+    @Test
+    fun `the count token becomes the live total`() {
+        assertEquals(
+            "312 already. Your thumb has done more reps than you have all week.",
+            GuiltText.render("{count} already. Your thumb has done more reps than you have all week.", 312),
+        )
+    }
+
+    @Test
+    fun `the minutes token becomes the estimate for that count`() {
+        assertEquals(
+            "${TimeEstimate.minutesLabel(312)} minutes gone.",
+            GuiltText.render("{minutes} minutes gone.", 312),
+        )
+    }
+
+    @Test
+    fun `a line can use a token more than once, and both move together`() {
+        assertEquals("50 and 50", GuiltText.render("{count} and {count}", 50))
+    }
+
+    @Test
+    fun `a line with no tokens is returned untouched`() {
+        val text = "The feed is infinite. Your evening is not."
+        assertEquals(text, GuiltText.render(text, 999))
+    }
+
+    @Test
+    fun `rendering tracks the count, so the line can never contradict the counter`() {
+        // The pinned line is re-rendered on every emission rather than frozen at fire time. A
+        // line that fired at 310 and is still on screen at 314 must read 314 — the alternative
+        // is the app disagreeing with the number next to it, which is the whole bug.
+        val text = "{count} and you are still reading this."
+        assertEquals("310 and you are still reading this.", GuiltText.render(text, 310))
+        assertEquals("314 and you are still reading this.", GuiltText.render(text, 314))
+    }
+
+    /* --- the guard ------------------------------------------------------------------- */
+
+    @Test
+    fun `spelled-out scale words are caught`() {
+        // THE case that matters. Every offender in the shipped pack was a WORD, not a digit, so
+        // a "no bare integers" guard would have passed the entire broken pack.
+        val offenders = listOf(
+            "Fifty already. Your thumb has done more reps than you have.",
+            "Seventy. At this point the app should be paying you rent.",
+            "A hundred and fifty. Your phone is worried about you.",
+            "Half a century. Great in cricket.",
+            "You have heard this sound thirty times.",
+            "Fine. Two hundred. Let us see what is on the other side.",
+        )
+        offenders.forEach { assertNotNull("missed a baked number in: $it", GuiltText.offendingNumber(it)) }
+    }
+
+    @Test
+    fun `digits are caught`() {
+        assertNotNull(GuiltText.offendingNumber("150 reels already?"))
+        assertNotNull(GuiltText.offendingNumber("You are at 312."))
+    }
+
+    @Test
+    fun `bare time units are caught — time is the count in different units`() {
+        listOf(
+            "That is half an hour you do not get back.",
+            "A full hour of your one life.",
+            "You came for five minutes.",
+            "Thirty-five minutes gone.",
+        ).forEach { assertNotNull("missed a duration claim in: $it", GuiltText.offendingNumber(it)) }
+    }
+
+    @Test
+    fun `a tokenised time claim is allowed`() {
+        assertNull(GuiltText.offendingNumber("{minutes} minutes gone. You would notice the cash."))
+        assertNull(GuiltText.offendingNumber("That is {minutes} minutes you do not get back."))
+    }
+
+    @Test
+    fun `the token's own text does not trip the guard`() {
+        // `{minutes}` literally contains the word "minutes"; the guard blanks known tokens before
+        // looking, or it would reject every line it exists to enable.
+        assertNull(GuiltText.offendingNumber("{minutes} minutes."))
+        assertNull(GuiltText.offendingNumber("{count} reels."))
+    }
+
+    @Test
+    fun `small idiomatic numbers are allowed`() {
+        // Deliberately not banned: these are never claims about the total, and a guard that fired
+        // on them would be switched off within a week. See GuiltText's class doc.
+        listOf(
+            "Go on, one more. The good one is definitely next.",
+            "You opened this to check one thing.",
+            "Putting it down is a skill. Try one rep.",
+            "That is one full lecture of scrolling.",
+            "It was mid the first time.",
+            "You get a finite number of evenings. You just spent one of them here.",
+        ).forEach { assertNull("false positive on: $it", GuiltText.offendingNumber(it)) }
+    }
+
+    @Test
+    fun `an unknown token is caught rather than printed at the user`() {
+        // A newer pack's `{streak}` would otherwise reach the screen as literal braces.
+        assertNotNull(GuiltText.offendingNumber("You are on a {streak} day run."))
+        assertEquals("{streak}", GuiltText.offendingNumber("You are on a {streak} day run."))
+    }
+
+    @Test
+    fun `the offender is named, not just flagged`() {
+        // So a parser log or a test failure is actionable: "contains 'hundred'" beats "invalid".
+        assertEquals("hundred", GuiltText.offendingNumber("A hundred windows into other lives."))
+    }
+}

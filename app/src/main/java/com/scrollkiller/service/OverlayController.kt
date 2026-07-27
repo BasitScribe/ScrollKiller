@@ -14,12 +14,16 @@ import android.view.View
 import android.view.ViewConfiguration
 import android.view.WindowManager
 import com.scrollkiller.brain.BrainState
+import com.scrollkiller.challenge.ChallengeController
+import com.scrollkiller.challenge.ChallengeRegistry
 import com.scrollkiller.data.CountLatency
 import com.scrollkiller.data.CountRepository
 import com.scrollkiller.data.SettingsPrefs
 import com.scrollkiller.data.TodaySummary
-import com.scrollkiller.guilt.GuiltPackLoader
-import com.scrollkiller.guilt.GuiltSurface
+import com.scrollkiller.guilt.GuiltCadence
+import com.scrollkiller.guilt.GuiltLines
+import com.scrollkiller.permission.BlockUnavailableNotifier
+import com.scrollkiller.permission.PermissionHealthReader
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -27,6 +31,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import java.time.LocalDate
 import kotlin.math.abs
 
 /**
@@ -55,8 +60,16 @@ import kotlin.math.abs
  * follows the TOTAL for the same reason.
  *
  * The block, in contrast, still keys off the CURRENT platform's count against that platform's
- * limit ([TodaySummary.countFor]) — limits are per-platform data on [PlatformSpec], and
- * whether they should become one shared budget is a product decision, not a rendering one.
+ * limit ([TodaySummary.countFor]) — limits are per-platform (the user's, from
+ * [SettingsPrefs.dailyLimit], defaulting to [PlatformSpec.dailyLimit]), and whether they should
+ * become one shared budget is a product decision, not a rendering one.
+ *
+ * ## The block is live on Instagram (D49)
+ * It was dormant from D19 until now because [PlatformSpec.blocksAtLimit] was false everywhere.
+ * Instagram alone is true today. Note that the block does NOT respect the bubble's Settings
+ * toggle: switching the passive counter off is a statement about a pill over your video, not a
+ * withdrawal of the daily limit you set. The overlay PERMISSION still gates both, so a user who
+ * refuses it gets neither — detection and the in-app counter are unaffected either way.
  *
  * Design constraints (this lives inside someone's doomscroll session — it can't jank
  * Instagram or eat battery):
@@ -94,17 +107,35 @@ class OverlayController(
 
     /** The full-screen block; shown only when the limit is crossed on the surface. */
     private val block: BlockScreenController by lazy {
-        BlockScreenController(context, onExit = ::onExit, onUnlock = ::onUnlock)
+        BlockScreenController(
+            context,
+            onExit = ::onExit,
+            onSnooze = ::onSnooze,
+            onStartChallenge = ::onStartChallenge,
+            onCancelChallenge = ::onCancelChallenge,
+        )
     }
+
+    /** The physical unlock (D50). Owns the sensor; knows nothing about what completing is worth. */
+    private val challenge: ChallengeController by lazy { ChallengeController(context) }
+
+    /** Tells the user, out of app, when the block cannot fire (D51). The nudge, not the net. */
+    private val notifier: BlockUnavailableNotifier by lazy { BlockUnavailableNotifier(context) }
+
+    /**
+     * Is the full-screen block up right now?
+     *
+     * Read by [ReelScrollAccessibilityService]'s surface hysteresis, which must NOT drop the
+     * surface while this is true: the block covers Instagram, so no further scroll can arrive to
+     * re-arm the timer, and the 3-second hysteresis would otherwise tear the block down and hand
+     * the reels back three seconds after raising it (D49).
+     */
+    val isBlocking: Boolean get() = block.isShowing
 
     /** The doom surface we're currently on (null = off-surface). */
     private var currentPlatform: Platform? = null
 
-    /** Set by [onUnlock]; suppresses the block until we leave the surface. TEMPORARY —
-     *  a successful challenge will drive this next checkbox. Reset in [offSurface]. */
-    private var unlocked = false
-
-    /** Last summary seen, so [onUnlock] and [collapseNudge] can re-render without a new emission. */
+    /** Last summary seen, so [onSnooze] and [collapseNudge] can re-render without a new emission. */
     private var lastSummary = TodaySummary.EMPTY
 
     private val windowManager =
@@ -140,13 +171,6 @@ class OverlayController(
 
     /** Scope for the count-Flow collection; alive only while on the doom surface. */
     private var collectScope: CoroutineScope? = null
-
-    /**
-     * The brain state at the last render, so we can nudge on a TRANSITION rather than on a
-     * count. Null while off-surface: re-entering a surface at an already-fried count must not
-     * fire a nudge, because nothing just changed — the user only walked back in.
-     */
-    private var lastBrainState: BrainState? = null
 
     /** True while the bubble is showing a guilt line instead of the count. */
     private var nudging = false
@@ -196,26 +220,64 @@ class OverlayController(
      */
     fun onSurface(platform: Platform) {
         currentPlatform = platform
-        unlocked = false
         ensureAttached()               // lazy first-attach if permission came later
+        warnEarlyIfBlockIsDead(platform)
         startCollecting(platform)
     }
 
-    /** The user left the doom surface: stop work and hide both overlays. */
+    /**
+     * The user just walked into a reel surface and we already know the block cannot fire — say so
+     * NOW rather than at the limit (D51).
+     *
+     * On the incident this exists for, the user reached 108 reels before noticing anything was
+     * wrong. This fires on the first scroll instead, which is the whole difference between an app
+     * that failed and an app that failed loudly.
+     *
+     * ONCE PER DAY, keyed on the device-local date and persisted, because [onSurface] runs on
+     * every surface entry and a warning on each one would be a notification every time the user
+     * opens Instagram — which is how people learn to swipe our warnings away. The day key is
+     * persisted rather than held here because the system restarts this service far more often
+     * than a day rolls over.
+     *
+     * Only fires for a platform that COULD block: a BETA platform was never going to raise a block
+     * anyway, so a missing overlay permission changes nothing about it and warning would be a lie.
+     */
+    private fun warnEarlyIfBlockIsDead(platform: Platform) {
+        if (!PlatformRegistry.specFor(platform).blocksAtLimit) return
+        if (PermissionHealthReader.of(context).canBlock) return
+
+        val today = LocalDate.now().toString()
+        if (SettingsPrefs.blockWarnedOn(context) == today) return
+        SettingsPrefs.setBlockWarnedOn(context, today)
+        Log.w(TAG, "entered $platform with the block dead (no overlay permission); warning once today")
+        notifier.warnEarly()
+    }
+
+    /**
+     * The user left the doom surface: stop work and hide both overlays.
+     *
+     * Unconditional, and it must stay that way — this is the path that runs when the user leaves
+     * the tracked app, and invariant 6 says the block tears down when they do. The service is
+     * responsible for not calling it while a block is up on a surface the user is still on (see
+     * [isBlocking]); it is NOT this method's job to second-guess, because a guard here would be a
+     * way for the block to survive leaving Instagram.
+     */
     fun offSurface() {
         collectScope?.cancel()
         collectScope = null
         currentPlatform = null
-        unlocked = false
         cancelNudge()
-        lastBrainState = null   // a fresh entry re-baselines; see the field doc
+        // NOTE: the firing cadence is deliberately NOT reset here. It lives in GuiltFiring, is
+        // keyed on the day's count, and persists across surface exits — which is what makes
+        // walking back into Reels at an unchanged count silent (D46). Resetting per entry would
+        // either re-baseline (and lose a pending fire) or fire on every arrival.
         bubble?.let {
             // Collapse the panel on the way out, so walking back into Reels shows the compact
             // pill rather than a panel the user left open twenty minutes ago.
             setExpanded(it, false)
             setBubbleShown(it, false)
         }
-        block.hide()
+        hideBlock()
     }
 
     /** Full teardown for service destroy/unbind: stop work and remove the windows. */
@@ -224,7 +286,8 @@ class OverlayController(
         collectScope = null
         nudgeHandler.removeCallbacksAndMessages(null)
         nudging = false
-        lastBrainState = null
+        GuiltLines.endBlockEpisode()
+        challenge.stop()          // the service is going away; the sensor must not outlive it
         block.destroy()
         bubble?.let { view ->
             try {
@@ -255,7 +318,13 @@ class OverlayController(
      * we're on the reel surface — the service's hysteresis keeps us "on surface" across the
      * gap between swipes, and [offSurface] hides it on leaving. The block only fires when
      * [PlatformSpec.blocksAtLimit] is true — which needs BOTH the block switched on for the
-     * platform and a count we trust (false for every platform today — never the feed).
+     * platform and a count we trust ([Maturity.STABLE]). Instagram is the only platform where
+     * both hold today (D49); every other one is BETA and structurally cannot block.
+     *
+     * The LIMIT is the user's ([SettingsPrefs.dailyLimit]), not the spec's — the spec's value is
+     * only the default that pref falls back to. Read per render rather than cached because the
+     * user can move the slider while the overlay is alive, and a limit that takes effect "next
+     * time you open Instagram" is a setting that looks broken.
      */
     private fun render(platform: Platform, summary: TodaySummary) {
         CountLatency.emitted()
@@ -264,17 +333,46 @@ class OverlayController(
         // The BLOCK still asks a per-platform question (this platform's count vs ITS limit),
         // even though the bubble displays the total — see the class doc.
         val forLimit = summary.countFor(platform)
-        when (BlockPolicy.overlayFor(forLimit, spec.dailyLimit, spec.blocksAtLimit, unlocked)) {
+        val limit = SettingsPrefs.dailyLimit(context, platform)
+        val overlay = BlockPolicy.overlayFor(
+            count = forLimit,
+            limit = limit,
+            gatingActive = spec.blocksAtLimit,
+            graceUntilMs = SettingsPrefs.graceUntilMs(context, platform),
+            nowMs = System.currentTimeMillis(),
+        )
+        when (overlay) {
             SurfaceOverlay.BLOCK -> {
                 cancelNudge()
                 bubble?.let {
                     setExpanded(it, false)
                     setBubbleShown(it, false)
                 }
-                block.show(platform, GuiltPackLoader.line(context, GuiltSurface.BLOCK))
+                // THE D51 FIX. This used to call block.show() and let it no-op when the overlay
+                // permission was missing — a Log.d and nothing else. That is right for the bubble
+                // (cosmetic, optional since D16) and was catastrophically wrong here: the app
+                // counted to 108, decided to block a hundred times, was refused by AppOps every
+                // time, and told nobody. The block is the product; being unable to draw it is an
+                // INCIDENT, not a shrug.
+                if (!PermissionHealthReader.of(context).canBlock) {
+                    Log.w(
+                        TAG,
+                        "BLOCK PREVENTED at $forLimit/$limit on $platform: overlay permission " +
+                            "missing (AppOps will refuse SYSTEM_ALERT_WINDOW). Warning the user.",
+                    )
+                    notifier.warnBlockPrevented()
+                    return
+                }
+                // Permission is fine — clear any warning left from when it wasn't, so a fixed
+                // problem does not keep announcing itself.
+                notifier.cancel()
+                // blockLine draws ONCE per episode and re-renders its tokens on every emission,
+                // so the sentence holds while `{count}` stays live — and an unbroken block does
+                // not eat the tier's 7-day pool one line per emission (D49).
+                block.show(platform, GuiltLines.blockLine(context, summary.total))
             }
             SurfaceOverlay.BUBBLE -> {
-                block.hide()
+                hideBlock()
                 val view = bubble ?: return          // no overlay permission — nothing to show
                 if (!SettingsPrefs.isBubbleEnabled(context)) {
                     cancelNudge()
@@ -282,9 +380,14 @@ class OverlayController(
                     setBubbleShown(view, false)       // user turned the bubble off
                     return
                 }
+                // Cadence FIRST, then render. GuiltLines.fire() repins on a fire, so asking it
+                // before renderCount is what makes the panel and the compact line show the same
+                // sentence on the same frame — the reverse order renders the previous line and
+                // then immediately replaces it.
+                val fired = GuiltLines.fire(context, summary.total)
                 renderCount(view, summary)
                 setBubbleShown(view, true)            // visible while on the reel surface
-                maybeNudge(view, summary.total)
+                if (fired != null) showNudge(view, summary.total, fired)
                 // One post per emission, doing two things that both need the NEXT layout pass:
                 //  - re-place, because the count gaining a digit (9→10, 99→100) widens the pill,
                 //    and a pill parked flush right would otherwise grow off the edge (D38). The
@@ -300,29 +403,19 @@ class OverlayController(
     }
 
     /**
-     * Show a guilt line in the bubble when the brain state ESCALATES (HEALTHY→CRACKING at 50,
-     * CRACKING→FRIED at 150), then collapse back to the count after [NUDGE_MS].
+     * Put a just-fired [line] on the bubble, then collapse back to the count after
+     * [GuiltCadence.DISPLAY_MS].
      *
-     * Why transitions and not "every N reels": the flip is already the app's emotional beat
-     * (D18), it's rare, and it's self-limiting — at most twice a day — so the bubble stays a
-     * passive counter rather than becoming a nag. Only escalations nudge; a de-escalation can
-     * only happen via a data clear or a day rollover, which is not a moment to guilt someone.
+     * No decision here any more — WHEN to fire is [GuiltFiring]'s, and this is called only when
+     * it has already said yes (D46). Lines now REPEAT on a cadence that tightens with the count
+     * (every 10 scrolls at 100, every scroll at 800+) rather than firing once per tier crossing,
+     * so this runs many times a day at a high count and must stay cheap: it is text on an
+     * already-attached view plus one re-placement, exactly like a digit-count change.
      *
-     * Each state draws from its own category mix (set in the pack, not here — D33): CRACKING
-     * gets roast/reverse-psych, FRIED gets existential/roast.
+     * The bubble does not choose its own line — [line] came from the shared pin, which is what
+     * Home's header and the panel below are also reading at this instant.
      */
-    private fun maybeNudge(view: BubbleView, count: Int) {
-        val state = BrainState.forCount(count)
-        val previous = lastBrainState
-        lastBrainState = state
-        if (previous == null || state == previous) return   // first render, or no flip
-
-        val surface = when (state) {
-            BrainState.CRACKING -> GuiltSurface.BUBBLE_CRACKING
-            BrainState.FRIED -> GuiltSurface.BUBBLE_FRIED
-            BrainState.HEALTHY -> return                    // de-escalation: never nudge
-        }
-
+    private fun showNudge(view: BubbleView, count: Int, line: String) {
         nudging = true
         nudgeHandler.removeCallbacksAndMessages(null)
         // Collapse the breakdown panel first if it happens to be open: the line needs the full
@@ -336,11 +429,12 @@ class OverlayController(
         // followed by a re-placement: a 240dp-wide line on a pill parked at the right edge is
         // the widest the bubble ever gets, so it is the shape most likely to overhang (D38).
         view.setHeadlineMaxWidth(dp(NUDGE_MAX_WIDTH_DP))
-        // The mascot stays put and has ALREADY escalated to this state via renderCount, so the
-        // nudge reads as the mascot saying the line. Headline text only here.
-        view.render(lastSummary, state, GuiltPackLoader.line(context, surface))
+        // The mascot stays put and has ALREADY escalated via renderCount, so the nudge reads as
+        // the mascot saying the line. Headline text is what changes here; the panel behind it
+        // carries the same line and is filled by renderCount either way.
+        view.render(lastSummary, BrainState.forCount(count), headlineText = line, guiltLine = line)
         view.post { applyPlacement(remeasure = true) }
-        nudgeHandler.postDelayed({ collapseNudge() }, NUDGE_MS)
+        nudgeHandler.postDelayed({ collapseNudge() }, GuiltCadence.DISPLAY_MS)
     }
 
     /** Collapse a showing nudge back to the count. Safe to call when not nudging. */
@@ -390,9 +484,86 @@ class OverlayController(
         }
     }
 
-    /** Exit: dismiss the block and send the user to the launcher (leave the app). */
-    private fun onExit() {
+    /**
+     * Take the block down and release its line. The ONE way the block is dismissed, so a
+     * dismissal can never forget to end the episode and hand the next block a stale sentence.
+     */
+    private fun hideBlock() {
+        GuiltLines.endBlockEpisode()
+        // Releases the step sensor. Routed through here rather than sprinkled across the exit,
+        // snooze and completion paths for the same reason endBlockEpisode is: a dismissal that
+        // forgets leaves a sensor registered by a background service, which is a battery
+        // complaint nobody ever traces back to us (D50).
+        challenge.stop()
         block.hide()
+    }
+
+    /**
+     * The user chose to earn their way out. Swap the block window's content to the challenge and
+     * start the sensor.
+     *
+     * If the sensor refuses to start we stay on the block rather than showing a ring that can
+     * never move — a user standing in their kitchen walking at a frozen 0/20 concludes the app is
+     * broken, and they are not wrong. The button is already hidden unless [MotionStatus] says the
+     * device can do this, so reaching the false branch means something changed underneath us
+     * (a permission revoked while the block was up).
+     */
+    private fun onStartChallenge() {
+        val spec = ChallengeRegistry.default ?: return
+        val started = challenge.start(
+            spec = spec,
+            onProgress = { block.renderChallengeProgress(challenge.currentProgress, spec.target) },
+            onComplete = ::onChallengeComplete,
+        )
+        if (!started) {
+            Log.w(TAG, "challenge sensor unavailable; staying on the block")
+            return
+        }
+        block.showChallenge(spec)
+    }
+
+    /** Backed out. Return to the block and release the sensor; progress is dropped, not banked. */
+    private fun onCancelChallenge() {
+        challenge.stop()
+        block.showBlockPanel()
+    }
+
+    /**
+     * Challenge completed — grant the EARNED reprieve.
+     *
+     * Deliberately a different, larger constant than [onSnooze]'s: granting the same as the free
+     * tap would make the challenge strictly dominated and the feature dead on arrival. Same
+     * persistence path as the tap, so everything D49 established about a reprieve — it survives
+     * leaving Instagram, it survives a service restart, it re-blocks on the next reel after it
+     * lapses, and no timer is involved — holds here unchanged.
+     */
+    private fun onChallengeComplete() {
+        val platform = currentPlatform ?: return
+        SettingsPrefs.setGraceUntilMs(
+            context,
+            platform,
+            System.currentTimeMillis() + BlockLimits.CHALLENGE_GRACE_MS,
+        )
+        hideBlock()
+        render(platform, lastSummary)
+    }
+
+    /**
+     * Exit: dismiss the block and send the user to the launcher (leave the app).
+     *
+     * ## Why a launcher INTENT and not `performGlobalAction(GLOBAL_ACTION_HOME)` (D49)
+     * The accessibility service could navigate the user out directly, and it would be fewer
+     * lines. It is deliberately not done: driving another app's navigation through the
+     * accessibility API is a materially stronger Play "misuse of the Accessibility API" signal
+     * than starting the launcher, for an outcome the user cannot tell apart. Do not "simplify"
+     * this into a global action.
+     *
+     * Dismissal happens BEFORE the intent and does not depend on it succeeding — invariant 6:
+     * if the launcher cannot be started (a locked-down device, a weird OEM), the user must still
+     * be looking at Instagram rather than at an overlay that would not go away.
+     */
+    private fun onExit() {
+        hideBlock()
         val intent = Intent(Intent.ACTION_MAIN).apply {
             addCategory(Intent.CATEGORY_HOME)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -405,12 +576,26 @@ class OverlayController(
     }
 
     /**
-     * Unlock: bypass the block until the user leaves this surface. TEMPORARY stand-in
-     * for the challenge flow (next checkbox) — a successful challenge will call this.
+     * "5 more minutes": grant a timed reprieve and take the block down.
+     *
+     * The deadline is PERSISTED (see [SettingsPrefs.graceUntilMs]) rather than held here, so the
+     * promise survives leaving Instagram and survives the service being restarted — a reprieve
+     * that a process death silently revokes is a promise broken at the worst possible moment.
+     *
+     * Nothing schedules the re-block. There is no timer: the grace is a deadline the render path
+     * already compares against on every count emission, so the next reel AFTER it expires blocks
+     * and no reel before it does. A timer would be a second source of truth for the same instant,
+     * and would have to be cancelled correctly on every exit path.
      */
-    private fun onUnlock() {
-        unlocked = true
-        currentPlatform?.let { render(it, lastSummary) }
+    private fun onSnooze() {
+        val platform = currentPlatform ?: return
+        SettingsPrefs.setGraceUntilMs(
+            context,
+            platform,
+            System.currentTimeMillis() + BlockLimits.GRACE_MS,
+        )
+        hideBlock()
+        render(platform, lastSummary)
     }
 
     /**
@@ -436,7 +621,14 @@ class OverlayController(
      */
     private fun renderCount(view: BubbleView, summary: TodaySummary) {
         val state = BrainState.forCount(summary.total)
-        view.render(summary, state, headlineText = if (nudging) null else summary.total.toString())
+        view.render(
+            summary,
+            state,
+            headlineText = if (nudging) null else summary.total.toString(),
+            // The panel's line, on every emission. Cheap: GuiltLines.current is pinned and only
+            // redraws on a tier/day/pack/locale change, so this is a field read almost always.
+            guiltLine = GuiltLines.current(context, summary.total),
+        )
     }
 
     /**
@@ -663,9 +855,6 @@ class OverlayController(
 
     private companion object {
         const val TAG = "ScrollKiller"
-
-        /** How long a brain-state nudge holds the bubble before collapsing to the count. */
-        const val NUDGE_MS = 4_000L
 
         /** Width cap while nudging, so a line wraps instead of spanning the screen. */
         const val NUDGE_MAX_WIDTH_DP = 240

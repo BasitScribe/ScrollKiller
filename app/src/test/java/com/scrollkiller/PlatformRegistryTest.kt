@@ -80,13 +80,48 @@ class PlatformRegistryTest {
     }
 
     @Test
-    fun `block stays dormant for every platform until markers are verified (D19-D24)`() {
-        PlatformRegistry.enabled.forEach { spec ->
-            assertTrue(
-                "blockEnabled must ship false for ${spec.platform} (unverified markers)",
-                !spec.blockEnabled,
-            )
-        }
+    fun `exactly one platform may cover a screen, and it is Instagram (D49)`() {
+        // THE safety net for the whole block feature. `blocksAtLimit` is the only thing standing
+        // between a platform and a full-screen overlay on someone's phone, so what may hold it is
+        // pinned here by name rather than left to whoever edits the registry next.
+        val blocking = PlatformRegistry.enabled.filter { it.blocksAtLimit }
+        assertEquals(
+            "only Instagram may block; found ${blocking.map { it.platform }}",
+            listOf(Platform.INSTAGRAM),
+            blocking.map { it.platform },
+        )
+    }
+
+    @Test
+    fun `a platform may only block once its surface is device-verified (D19-D24-D49)`() {
+        // The precondition the block was dormant on from D19 until D49. ENFORCED with real
+        // markers means the block can land ONLY on the reel player — never the home feed, the
+        // profile grid, DMs or Stories. Enabling the block on a PASSTHROUGH or SHADOW platform,
+        // or on an ENFORCED one with empty markers, is how the app ends up covering a feed.
+        PlatformRegistry.enabled
+            .filter { it.blockEnabled }
+            .forEach { spec ->
+                assertEquals(
+                    "${spec.platform} may not block without ENFORCED surface gating",
+                    GatingMode.ENFORCED,
+                    spec.gating,
+                )
+                assertTrue(
+                    "${spec.platform} may not block with empty surface markers",
+                    spec.surfaceMarkers.isNotEmpty(),
+                )
+            }
+    }
+
+    @Test
+    fun `Instagram blocks on the toured clips_viewer marker and nothing else (D26-D49)`() {
+        // The specific string the 2026-07-24 tour proved, kept explicit because the near-miss is
+        // real: Stories are internally "reels" and emit reel_viewer_*, so a marker of
+        // "reel_viewer" — or a broadened "reel" — would put the block over Stories. Every
+        // sibling IG surface was NO_MATCH against this exact value.
+        val instagram = PlatformRegistry.specFor(Platform.INSTAGRAM)
+        assertTrue(instagram.blocksAtLimit)
+        assertEquals(listOf("clips_viewer"), instagram.surfaceMarkers)
     }
 
     @Test
@@ -103,6 +138,13 @@ class PlatformRegistryTest {
                 )
                 assertTrue("BETA ${spec.platform} should be badged in the UI", spec.isBeta)
             }
+        // Stated positively too, so the day someone promotes YouTube they have to come here and
+        // mean it: the three unmeasured platforms are false on BOTH counts, not just derived-false.
+        listOf(Platform.YOUTUBE, Platform.TIKTOK, Platform.SNAPCHAT).forEach { platform ->
+            val spec = PlatformRegistry.specFor(platform)
+            assertFalse("$platform must not have blockEnabled set", spec.blockEnabled)
+            assertFalse("$platform must not be eligible to block", spec.blocksAtLimit)
+        }
     }
 
     @Test

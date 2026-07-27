@@ -17,8 +17,12 @@ import kotlinx.coroutines.SupervisorJob
  */
 class ScrollKillerApp : Application() {
 
-    /** Process-lifetime IO scope for fire-and-forget count writes. */
-    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    /**
+     * Process-lifetime IO scope for fire-and-forget writes — counts, and the guilt-line history
+     * ([com.scrollkiller.guilt.GuiltLines]). Exposed rather than private because the guilt
+     * history is written from a render path that must not block and has no scope of its own.
+     */
+    val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     val database: ScrollKillerDatabase by lazy { ScrollKillerDatabase.build(this) }
 

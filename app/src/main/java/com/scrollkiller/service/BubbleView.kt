@@ -47,6 +47,7 @@ class BubbleView(context: Context) : LinearLayout(context) {
     private val mascot: ImageView
     private val headline: TextView
     private val panel: LinearLayout
+    private val panelLine: TextView
     private val panelTotal: TextView
     private val rows: List<BarRow>
 
@@ -119,10 +120,23 @@ class BubbleView(context: Context) : LinearLayout(context) {
             layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT)
                 .apply { topMargin = dp(PANEL_TOP_MARGIN_DP) }
         }
+        // The guilt line, at the TOP of the panel — above the numbers, because the line is what
+        // the app is saying and the bars are the evidence for it. Same pinned line Home's header
+        // and the compact nudge show at this moment (D41): they all read GuiltLines.current().
+        // GONE below the tier threshold, which is most of the day and is the designed silence.
+        panelLine = TextView(context).apply {
+            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
+                .apply { bottomMargin = dp(PANEL_LINE_MARGIN_DP) }
+            visibility = GONE
+            setTextColor(TEXT_COLOR)     // full white: this is the message, not a label
+            textSize = PANEL_LINE_SP
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        }
         panelTotal = TextView(context).apply {
             setTextColor(PANEL_TEXT_COLOR)
             textSize = PANEL_TEXT_SP
         }
+        panel.addView(panelLine)
         panel.addView(panelTotal)
         // One row per platform, built ONCE and then shown/hidden per emission. Building rows
         // on the fly would allocate views inside someone's doomscroll session for no reason —
@@ -138,15 +152,24 @@ class BubbleView(context: Context) : LinearLayout(context) {
      * @param headlineText what the compact line reads, or NULL to leave it exactly as it is.
      *   Null is how a count arriving mid-nudge updates the tint, the mascot and the panel
      *   without wiping the guilt line off the screen a few hundred ms after it appeared — which
-     *   is precisely when it is most likely, since the state flip happens *because* the count
+     *   is precisely when it is most likely, since the tier flip happens *because* the count
      *   moved (D33). [OverlayController] owns that decision, so it is a parameter here.
+     * @param guiltLine the app's current line for the panel, or NULL when the count is below the
+     *   first tier and the app is deliberately silent (D41). Unlike [headlineText], null here
+     *   means HIDE, not "leave alone": the panel is not competing with a timed nudge, so there
+     *   is no state of it worth preserving.
      */
-    fun render(summary: TodaySummary, state: BrainState, headlineText: CharSequence?) {
+    fun render(
+        summary: TodaySummary,
+        state: BrainState,
+        headlineText: CharSequence?,
+        guiltLine: CharSequence?,
+    ) {
         if (headlineText != null) headline.text = headlineText
         setMascot(state)
         // mutate() so tinting this instance doesn't affect the shared drawable constant.
         background?.mutate()?.setTint(state.accentArgb.toInt())
-        renderPanel(summary)
+        renderPanel(summary, guiltLine)
     }
 
     /**
@@ -183,8 +206,10 @@ class BubbleView(context: Context) : LinearLayout(context) {
      * layout). That keeps the panel correct the instant it is expanded, instead of showing one
      * stale frame until the next count arrives.
      */
-    private fun renderPanel(summary: TodaySummary) {
+    private fun renderPanel(summary: TodaySummary, guiltLine: CharSequence?) {
         val bars = BubbleBreakdown.bars(summary)
+        panelLine.visibility = if (guiltLine.isNullOrBlank()) GONE else VISIBLE
+        if (!guiltLine.isNullOrBlank()) panelLine.text = guiltLine
         panelTotal.text = context.getString(
             R.string.overlay_panel_total,
             summary.total,
@@ -205,18 +230,24 @@ class BubbleView(context: Context) : LinearLayout(context) {
     }
 
     /**
-     * One `[icon] ▓▓▓░░ 30` row: a platform glyph, a proportional bar, and the count.
+     * One `[icon] Instagram ▓▓▓░░ 30` row: a generic glyph, the platform's NAME, a proportional
+     * bar, and the count.
      *
-     * ## Why an icon and not the "IG"/"YT" text it replaced (D40)
-     * Two initials in 11sp, in a translucent white, at the far left of a bar in a pill floating
-     * over a moving video, were the least legible thing in the panel — and they carried no more
-     * information than a shape does. The glyphs are GENERIC (a camera, a video player, a music
-     * note), never the platforms' brand marks: this panel draws inside someone else's app, and
-     * a reproduced logo is a trademark question with nothing to gain. They come from
-     * [PlatformSpec.iconRes] so adding a platform stays data, not code.
+     * ## Icon + name, and why not a logo (D40, revised by D44)
+     * D40 replaced the old "IG"/"YT" initials with a glyph, correctly: two characters at 11sp in
+     * translucent white over a moving video were the least legible thing in the panel. But a
+     * generic camera does not say *Instagram* — it says "some video app" — so the row lost the
+     * one thing it was there to tell you.
      *
-     * The label column keeps its exact width, so the bars still line up down the panel and the
-     * change is legibility only, not layout.
+     * The obvious fix is the platform's real logo, and we are deliberately not doing that. The
+     * panel draws INSIDE those apps' own UI, and reproducing a mark there is a trademark
+     * question with no upside. Naming an app is nominative use and is not the same thing. So the
+     * row carries [PlatformSpec.brandName] as TEXT beside the generic glyph, which is both
+     * unambiguous and safe. [PlatformSpec.iconRes] keeps its slot for the day licensed marks
+     * arrive — that is a drawable swap with no code change.
+     *
+     * The label column is a fixed width, so the bars still line up down the panel however long
+     * a future platform's name is; the name ellipsises rather than pushing the bar around.
      *
      * The bar is drawn with LAYOUT WEIGHTS rather than a pixel width, because a pixel width
      * would need the track's measured size — which is not known when [bind] runs. Two weighted
@@ -225,7 +256,8 @@ class BubbleView(context: Context) : LinearLayout(context) {
      */
     private inner class BarRow(context: Context) {
         val view: LinearLayout
-        private val label: ImageView
+        private val icon: ImageView
+        private val name: TextView
         private val fill: View
         private val rest: View
         private val count: TextView
@@ -234,14 +266,24 @@ class BubbleView(context: Context) : LinearLayout(context) {
         private var lastIcon = 0
 
         init {
-            label = ImageView(context).apply {
+            icon = ImageView(context).apply {
                 layoutParams = LayoutParams(dp(BAR_ICON_DP), dp(BAR_ICON_DP))
-                    .apply { marginEnd = dp(BAR_LABEL_WIDTH_DP) - dp(BAR_ICON_DP) }
+                    .apply { marginEnd = dp(BAR_ICON_GAP_DP) }
                 scaleType = ImageView.ScaleType.FIT_CENTER
                 // Tinted rather than shipped coloured: the glyph then recedes behind the count
                 // at exactly the same weight the "IG"/"YT" text did, and one drawable serves
                 // whatever the panel's palette becomes.
                 imageTintList = ColorStateList.valueOf(PANEL_TEXT_COLOR)
+            }
+            name = TextView(context).apply {
+                // Fixed width, not WRAP_CONTENT: the bars must start at the same x on every row
+                // or the panel reads as a ragged list rather than a chart. A longer name
+                // ellipsises instead of shoving its own bar right.
+                layoutParams = LayoutParams(dp(BAR_NAME_WIDTH_DP), LayoutParams.WRAP_CONTENT)
+                setTextColor(PANEL_TEXT_COLOR)
+                textSize = PANEL_TEXT_SP
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
             }
             fill = View(context).apply {
                 setBackgroundResource(R.drawable.overlay_bar_fill)
@@ -273,7 +315,8 @@ class BubbleView(context: Context) : LinearLayout(context) {
                 gravity = Gravity.CENTER_VERTICAL
                 layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
                     .apply { topMargin = dp(BAR_ROW_MARGIN_DP) }
-                addView(label)
+                addView(icon)
+                addView(name)
                 addView(track)
                 addView(count)
             }
@@ -281,6 +324,10 @@ class BubbleView(context: Context) : LinearLayout(context) {
 
         fun bind(bar: BreakdownBar) {
             setIcon(bar.platform)
+            name.text = PlatformRegistry.specOrNull(bar.platform)
+                ?.brandName
+                ?.takeIf { it.isNotBlank() }
+                ?: bar.platform.id
             count.text = bar.count.toString()
             // A bar at share 1.0 leaves `rest` at weight 0, i.e. zero width — correct, and the
             // reason the fill/rest split is expressed as a fraction of weightSum rather than
@@ -304,10 +351,10 @@ class BubbleView(context: Context) : LinearLayout(context) {
          */
         private fun setIcon(platform: Platform) {
             val spec = PlatformRegistry.specOrNull(platform)
-            val icon = spec?.iconRes?.takeIf { it != 0 } ?: R.drawable.ic_platform_generic
-            if (icon == lastIcon) return
-            lastIcon = icon
-            label.setImageResource(icon)
+            val res = spec?.iconRes?.takeIf { it != 0 } ?: R.drawable.ic_platform_generic
+            if (res == lastIcon) return
+            lastIcon = res
+            icon.setImageResource(res)
         }
 
         fun hide() {
@@ -332,20 +379,32 @@ class BubbleView(context: Context) : LinearLayout(context) {
         /** Panel text (the time line, bar labels and counts) — a subtitle, not the headline. */
         const val PANEL_TEXT_SP = 11f
 
-        /** Minimum panel width, so the bars have room to be readable when expanded. */
-        const val PANEL_MIN_WIDTH_DP = 180
+        /** The guilt line in the panel. Between the count and the labels: it is the message,
+         *  but it is still a line inside an overlay, not a headline. */
+        const val PANEL_LINE_SP = 13f
+
+        /** Gap under the guilt line, separating it from the numbers that justify it. */
+        const val PANEL_LINE_MARGIN_DP = 6
+
+        /** Minimum panel width, so the bars have room to be readable when expanded. Widened
+         *  from 180 for D44's platform names — a 180dp panel with a name column left the bars
+         *  too short to compare, which is the panel's whole job. */
+        const val PANEL_MIN_WIDTH_DP = 240
 
         /** Gap between the compact line and the panel it expands into. */
         const val PANEL_TOP_MARGIN_DP = 8
 
         const val BAR_HEIGHT_DP = 6
 
-        /** Label column width. Unchanged from the "IG"/"YT" text it replaced, so the bars in
-         *  the panel still start at the same x and nothing else in the row had to move. */
-        const val BAR_LABEL_WIDTH_DP = 22
-
-        /** Glyph size inside that column; the remainder is the gap before the bar track. */
+        /** Glyph size. */
         const val BAR_ICON_DP = 13
+
+        /** Gap between the glyph and the platform name beside it. */
+        const val BAR_ICON_GAP_DP = 5
+
+        /** Name column width. FIXED, so every bar in the panel starts at the same x — the
+         *  longest shipped name ("Snapchat") fits at 11sp and anything longer ellipsises. */
+        const val BAR_NAME_WIDTH_DP = 56
         const val BAR_COUNT_WIDTH_DP = 24
         const val BAR_GAP_DP = 6
         const val BAR_ROW_MARGIN_DP = 6

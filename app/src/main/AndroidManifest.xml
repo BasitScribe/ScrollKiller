@@ -9,11 +9,28 @@
       the in-app counter work without it. Granting it is a user-driven flow
       (Settings.ACTION_MANAGE_OVERLAY_PERMISSION), gated by the second onboarding
       step; the service no-ops the bubble when Settings.canDrawOverlays is false.
+    - ACTIVITY_RECOGNITION: read the step-detector/step-counter sensors for the
+      physical unlock challenges (D50). Also OPTIONAL — without it the challenge is
+      not offered and everything else, including the block and both ways out of it,
+      is unaffected. Dangerous only on API 29+; before that the platform's step
+      sensors needed no grant, which MotionStatus.hasPermission accounts for. It is
+      a normal runtime permission (no Play declaration form), requested from
+      MainActivity's Settings tab because an AccessibilityService has no Activity to
+      request it from.
+    - POST_NOTIFICATIONS: warn the user when the app CANNOT DO ITS JOB — specifically
+      when a block should have fired and the overlay permission is missing (D51). It is
+      an alert about the app's own health, never marketing and never re-engagement.
+      Also optional, and deliberately so: without it the app is DEGRADED rather than
+      broken, and the Home banner — which needs no permission at all — remains the
+      guaranteed signal. Dangerous only on API 33+. Requested from the Settings tab,
+      same reason as ACTIVITY_RECOGNITION above.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:name=".ScrollKillerApp"

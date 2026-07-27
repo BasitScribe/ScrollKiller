@@ -115,7 +115,33 @@ class ReelScrollAccessibilityService : AccessibilityService() {
      * end the entry-count session (a long watch must not re-trigger the landing count).
      */
     private val surfaceHandler = Handler(Looper.getMainLooper())
-    private val hideSurfaceRunnable = Runnable { setDoomSurface(null) }
+
+    /**
+     * Drop the overlay once the surface has gone quiet — UNLESS the block is up.
+     *
+     * ## Why the exception exists (D49)
+     * The hysteresis is armed by a marker-matched scroll. Once the full-screen block covers
+     * Instagram the user CANNOT scroll, so nothing re-arms it, and the plain version of this
+     * runnable tore the block down three seconds after raising it and handed the reels straight
+     * back. Instagram is DELTA_Y_FORWARD, so its content-changed path does not re-arm either.
+     *
+     * A showing block means the user is, by construction, still on the surface — they are looking
+     * at our screen over it — so the right answer is to keep waiting rather than to expire. It
+     * RE-POSTS instead of simply returning so the normal 3-second behaviour resumes by itself the
+     * moment the block comes down; nothing has to remember to re-arm it.
+     *
+     * This is NOT a way for the block to outlive leaving Instagram: that path is
+     * [onForegroundChanged] → [clearSurface], which is unconditional (invariant 6).
+     */
+    private val hideSurfaceRunnable = object : Runnable {
+        override fun run() {
+            if (overlay.isBlocking) {
+                surfaceHandler.postDelayed(this, SURFACE_HYSTERESIS_MS)
+            } else {
+                setDoomSurface(null)
+            }
+        }
+    }
 
     /**
      * Entry-count session (D29): the platform whose landing reel we've already credited. A

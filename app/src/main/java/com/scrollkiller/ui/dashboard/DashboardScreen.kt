@@ -1,5 +1,8 @@
 package com.scrollkiller.ui.dashboard
 
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -14,15 +17,20 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -36,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -45,7 +54,16 @@ import androidx.compose.ui.unit.sp
 import com.scrollkiller.R
 import com.scrollkiller.brain.BrainState
 import com.scrollkiller.brain.MascotArt
+import com.scrollkiller.guilt.GuiltLocale
+import com.scrollkiller.guilt.GuiltLocaleCatalog
+import com.scrollkiller.permission.PermissionGap
+import com.scrollkiller.permission.PermissionHealth
+import com.scrollkiller.permission.PermissionHealthReader
+import com.scrollkiller.service.BlockLimits
+import com.scrollkiller.service.Platform
+import com.scrollkiller.service.PlatformSpec
 import com.scrollkiller.stats.TimeEstimate
+import com.scrollkiller.ui.onboarding.MotionStatus
 
 /** The three dashboard destinations. Emoji icons keep us off the material-icons dependency. */
 private enum class DashboardTab(val labelRes: Int, val emoji: String) {
@@ -75,6 +93,10 @@ fun DashboardScreen(
     val total by viewModel.total.collectAsState()
     val breakdown by viewModel.breakdown.collectAsState()
     val bubbleEnabled by viewModel.bubbleEnabled.collectAsState()
+    val guiltLine by viewModel.guiltLine.collectAsState()
+    val guiltLocale by viewModel.guiltLocale.collectAsState()
+    val dailyLimits by viewModel.dailyLimits.collectAsState()
+    val health by viewModel.health.collectAsState()
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -92,13 +114,18 @@ fun DashboardScreen(
         },
     ) { padding ->
         when (tab) {
-            DashboardTab.TODAY -> TodayTab(total, breakdown, padding)
+            DashboardTab.TODAY -> TodayTab(total, guiltLine, breakdown, health, padding)
             DashboardTab.APPS -> AppsTab(breakdown, padding)
             DashboardTab.SETTINGS -> SettingsTab(
                 accessibilityEnabled = accessibilityEnabled,
                 canDrawOverlays = canDrawOverlays,
                 bubbleEnabled = bubbleEnabled,
                 onToggleBubble = viewModel::setBubbleEnabled,
+                blockingPlatforms = viewModel.blockingPlatforms,
+                dailyLimits = dailyLimits,
+                onSetDailyLimit = viewModel::setDailyLimit,
+                guiltLocale = guiltLocale,
+                onPickGuiltLocale = viewModel::setGuiltLocale,
                 onOpenAccessibilitySettings = onOpenAccessibilitySettings,
                 onOpenOverlaySettings = onOpenOverlaySettings,
                 onClearData = viewModel::clearData,
@@ -113,7 +140,13 @@ fun DashboardScreen(
 /* ----------------------------------------------------------------------------------- */
 
 @Composable
-private fun TodayTab(total: Int, breakdown: List<PlatformCount>, padding: PaddingValues) {
+private fun TodayTab(
+    total: Int,
+    guiltLine: String?,
+    breakdown: List<PlatformCount>,
+    health: PermissionHealth,
+    padding: PaddingValues,
+) {
     val brain = BrainState.forCount(total)
     val accent = Color(brain.accentArgb)
 
@@ -125,6 +158,10 @@ private fun TodayTab(total: Int, breakdown: List<PlatformCount>, padding: Paddin
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Spacer(Modifier.height(24.dp))
+        // ABOVE the mascot, deliberately. If the app cannot do its job, that outranks the number
+        // it is showing you — a healthy-looking counter over a dead block is exactly the lie D51
+        // was about.
+        PermissionBanner(health)
         // The mascot hero — the emotional core. Art comes from MascotArt (the single
         // state→drawable mapping) as a pre-scaled bitmap for the device's density, so this
         // is a straight blit rather than the runtime scale a single oversized PNG would cost.
@@ -155,6 +192,20 @@ private fun TodayTab(total: Int, breakdown: List<PlatformCount>, padding: Paddin
             color = accent,
             fontWeight = FontWeight.Bold,
         )
+
+        // The app's current line, escalating with the count (D41). Absent — not blank, not a
+        // placeholder — below the first threshold: under 50 short videos the app has nothing to
+        // say, and saying something anyway is how it stops being believed by the time it does.
+        // Same pinned line the bubble is showing at this moment; Home does not draw its own.
+        if (guiltLine != null) {
+            Spacer(Modifier.height(16.dp))
+            Text(
+                text = guiltLine,
+                style = MaterialTheme.typography.titleMedium,
+                textAlign = TextAlign.Center,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
 
         Spacer(Modifier.height(24.dp))
         // Per-platform breakdown ("Instagram Reels: 24" …).
@@ -264,6 +315,70 @@ private fun ScrollBar(
     }
 }
 
+/**
+ * The guaranteed signal that ScrollKiller cannot do its job (D51).
+ *
+ * ## Why this layer is the one that matters
+ * The out-of-app warning is a notification, and a notification can be denied, disabled, or never
+ * posted at all because the service that would post it is off. This banner needs no permission and
+ * no running service — it is drawn by the app the user is looking at. So it, not the notification,
+ * is the thing that must never be wrong, and it covers the case the notification cannot: "we could
+ * not even warn you".
+ *
+ * ONE Fix button, routed from [PermissionHealth.firstMissing]. Three buttons would ask the user to
+ * prioritise a system they cannot see; the app knows the severity order and points at the worst
+ * thing.
+ *
+ * Two tones, because two different things are true. A missing accessibility or overlay permission
+ * is an ERROR — the app is not doing what it says. Missing notifications is a WARNING — everything
+ * works, we just cannot tell you if it stops. Rendering the second as an error would be crying
+ * wolf about the banner that has to be believed the first time.
+ */
+@Composable
+private fun PermissionBanner(health: PermissionHealth) {
+    val gap = health.firstMissing ?: return          // healthy: no banner at all
+    val context = LocalContext.current
+    val degraded = health.isDegraded
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (degraded) {
+                MaterialTheme.colorScheme.secondaryContainer
+            } else {
+                MaterialTheme.colorScheme.errorContainer
+            },
+        ),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                stringResource(
+                    if (degraded) R.string.health_banner_degraded_title else R.string.health_banner_title,
+                ),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            // Names the actual permission. "Something is wrong, tap to fix" with no noun is what
+            // people learn to ignore, and this is the one message that has to land first time.
+            Text(
+                stringResource(
+                    when (gap) {
+                        PermissionGap.ACCESSIBILITY -> R.string.health_banner_accessibility
+                        PermissionGap.OVERLAY -> R.string.health_banner_overlay
+                        PermissionGap.NOTIFICATIONS -> R.string.health_banner_notifications
+                    },
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            OutlinedButton(onClick = { PermissionHealthReader.openSettingsFor(context, gap) }) {
+                Text(stringResource(R.string.health_banner_fix))
+            }
+        }
+    }
+}
+
 /* ----------------------------------------------------------------------------------- */
 /* Settings                                                                             */
 /* ----------------------------------------------------------------------------------- */
@@ -274,12 +389,23 @@ private fun SettingsTab(
     canDrawOverlays: Boolean,
     bubbleEnabled: Boolean,
     onToggleBubble: (Boolean) -> Unit,
+    blockingPlatforms: List<PlatformSpec>,
+    dailyLimits: Map<Platform, Int>,
+    onSetDailyLimit: (Platform, Int) -> Unit,
+    guiltLocale: GuiltLocale,
+    onPickGuiltLocale: (GuiltLocale) -> Unit,
     onOpenAccessibilitySettings: () -> Unit,
     onOpenOverlaySettings: () -> Unit,
     onClearData: () -> Unit,
     contentPadding: PaddingValues,
 ) {
     var confirmClear by remember { mutableStateOf(false) }
+
+    // Hoisted out of the LazyColumn: its body is a LazyListScope lambda, not a composable one, so
+    // LocalContext cannot be read inside it. Remembered because the hardware cannot change while
+    // the screen is open, unlike the permission below it.
+    val context = LocalContext.current
+    val hasStepSensor = remember { MotionStatus.hasStepSensor(context) }
 
     LazyColumn(
         modifier = Modifier
@@ -334,6 +460,88 @@ private fun SettingsTab(
             }
         }
 
+        // Motion access for the physical unlock challenges (D50). Shown ONLY on a device that has
+        // a step sensor — asking for a permission that would unlock nothing is worse than staying
+        // quiet — and it is the one place the request can happen at all, since an
+        // AccessibilityService has no Activity to request a runtime permission from.
+        if (hasStepSensor) {
+            item {
+                var motionGranted by remember { mutableStateOf(MotionStatus.hasPermission(context)) }
+                val launcher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.RequestPermission(),
+                ) { granted -> motionGranted = granted }
+
+                SettingRow(
+                    title = stringResource(R.string.settings_motion_title),
+                    subtitle = if (motionGranted) {
+                        stringResource(R.string.settings_status_on)
+                    } else {
+                        stringResource(R.string.settings_motion_subtitle)
+                    },
+                ) {
+                    if (motionGranted) {
+                        Text(stringResource(R.string.settings_status_on))
+                    } else {
+                        OutlinedButton(onClick = { launcher.launch(MotionStatus.PERMISSION) }) {
+                            Text(stringResource(R.string.settings_motion_grant))
+                        }
+                    }
+                }
+            }
+        }
+
+        // Permission alerts (D51) — the out-of-app half of "never fail silently". Requested here
+        // rather than in onboarding so the app does not ask for three permissions before it has
+        // shown the user anything, and API 33+ only: below that notifications need no grant, the
+        // same way MotionStatus handles API 26–28.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            item {
+                var canNotify by remember { mutableStateOf(PermissionHealthReader.canNotify(context)) }
+                val launcher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.RequestPermission(),
+                ) { canNotify = PermissionHealthReader.canNotify(context) }
+
+                SettingRow(
+                    title = stringResource(R.string.settings_alerts_title),
+                    subtitle = if (canNotify) {
+                        stringResource(R.string.settings_status_on)
+                    } else {
+                        stringResource(R.string.settings_alerts_subtitle)
+                    },
+                ) {
+                    if (canNotify) {
+                        Text(stringResource(R.string.settings_status_on))
+                    } else {
+                        OutlinedButton(
+                            onClick = { launcher.launch(PermissionHealthReader.NOTIFICATION_PERMISSION) },
+                        ) {
+                            Text(stringResource(R.string.settings_motion_grant))
+                        }
+                    }
+                }
+            }
+        }
+
+        // Daily limit, one slider per platform cleared to block (D49). Today that is Instagram
+        // and nothing else — driven off blocksAtLimit rather than a hardcoded row, so a BETA
+        // platform can never show a limit control it would not honour, and promoting one later
+        // needs no change here.
+        items(blockingPlatforms, key = { it.platform }) { spec ->
+            DailyLimitRow(
+                spec = spec,
+                limit = dailyLimits[spec.platform] ?: spec.dailyLimit,
+                onChange = { onSetDailyLimit(spec.platform, it) },
+            )
+        }
+
+        // Which guilt pack the lines come from (D43). One option today — the row still ships,
+        // because it tells the user whose voice they are hearing and because a control that
+        // appears from nowhere the day a second pack lands is a worse introduction than one
+        // that was always there.
+        item {
+            GuiltPackRow(selected = guiltLocale, onPick = onPickGuiltLocale)
+        }
+
         item { HorizontalDivider() }
 
         // Destructive: clear all data.
@@ -366,6 +574,77 @@ private fun SettingsTab(
                 }
             },
         )
+    }
+}
+
+/**
+ * The daily limit for one platform: how many reels before the block screen goes up.
+ *
+ * A full-width [Slider] under the label rather than beside it — this is the only setting in the
+ * app whose value is a NUMBER the user is choosing, and it needs the width to be draggable.
+ * Stepped by [BlockLimits.LIMIT_STEP] so the choice stays meaningful (137 does not differ from
+ * 140 in any way the user can feel), and the live value is echoed in the subtitle because a
+ * slider with no readout is a slider nobody can set deliberately.
+ *
+ * The write goes through on every change, not on release: [DashboardViewModel.setDailyLimit]
+ * persists immediately and the overlay re-reads the pref per emission, so the limit is live on
+ * the next reel.
+ */
+@Composable
+private fun DailyLimitRow(spec: PlatformSpec, limit: Int, onChange: (Int) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            stringResource(R.string.settings_limit_title, spec.displayName),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        Text(
+            stringResource(R.string.settings_limit_subtitle, limit, spec.unitNoun),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Slider(
+            value = limit.toFloat(),
+            onValueChange = { onChange(it.toInt()) },
+            valueRange = BlockLimits.MIN_DAILY_LIMIT.toFloat()..BlockLimits.MAX_DAILY_LIMIT.toFloat(),
+            // Slider counts the gaps BETWEEN stops, and both endpoints are stops of their own —
+            // hence the -1. Off by one here would silently shift every step off the constant.
+            steps = (BlockLimits.MAX_DAILY_LIMIT - BlockLimits.MIN_DAILY_LIMIT) / BlockLimits.LIMIT_STEP - 1,
+        )
+    }
+}
+
+/**
+ * Guilt-pack picker: a settings row whose control is a dropdown over [GuiltLocaleCatalog].
+ *
+ * A plain [DropdownMenu] anchored to a button rather than Material 3's `ExposedDropdownMenuBox`
+ * — that one is still experimental API, and this is a one-of-N picker in a settings list, which
+ * is the least exotic control there is.
+ */
+@Composable
+private fun GuiltPackRow(selected: GuiltLocale, onPick: (GuiltLocale) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    val current = GuiltLocaleCatalog.optionFor(selected)
+
+    SettingRow(
+        title = stringResource(R.string.settings_pack_title),
+        subtitle = stringResource(R.string.settings_pack_subtitle),
+    ) {
+        Box {
+            OutlinedButton(onClick = { expanded = true }) {
+                Text(stringResource(current.labelRes))
+            }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                GuiltLocaleCatalog.options.forEach { option ->
+                    DropdownMenuItem(
+                        text = { Text(stringResource(option.labelRes)) },
+                        onClick = {
+                            expanded = false
+                            onPick(option.locale)
+                        },
+                    )
+                }
+            }
+        }
     }
 }
 

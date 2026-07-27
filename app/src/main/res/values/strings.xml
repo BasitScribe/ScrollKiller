@@ -9,7 +9,13 @@
          The description is what the system shows under the toggle, so it must
          explain what the service reads and reassure that nothing leaves the phone. -->
     <string name="accessibility_service_label">ScrollKiller Detector</string>
-    <string name="accessibility_service_description">Counts how many reels/short videos you scroll so ScrollKiller can show your daily total. It reads only scroll events in short-video feeds and which app is currently in the foreground (so the counter bubble can appear over that app and hide when you leave it) — never the videos, captions, messages, or anything you view. Nothing you look at ever leaves your phone.</string>
+    <!--
+        Play's Accessibility API policy requires the DECLARED function to match the actual one.
+        As of D49 the service no longer only counts: it is what decides to put a full-screen
+        block over a short-video feed once you pass your own daily limit, so blocking is stated
+        here, in the system-facing description, and not only in the in-app disclosure dialog.
+    -->
+    <string name="accessibility_service_description">Counts how many reels/short videos you scroll so ScrollKiller can show your daily total, and — once you pass the daily limit you set — shows a full-screen block over that app so you can stop. You can always leave the block, and you can always ask for a few more minutes. It reads only scroll events in short-video feeds and which app is currently in the foreground (so the counter bubble and the block can appear over that app and go away when you leave it) — never the videos, captions, messages, or anything you view. Nothing you look at ever leaves your phone.</string>
 
     <!-- Disclosure screen (shown BEFORE we send the user to Settings — invariant #5). -->
     <string name="disclosure_title">One permission to count your scrolling</string>
@@ -48,6 +54,42 @@
     <string name="settings_overlay_title">Display over other apps</string>
     <string name="settings_bubble_title">Floating counter bubble</string>
     <string name="settings_bubble_subtitle">Show your live count over reels while you scroll</string>
+    <!-- Daily limit slider (D49). One row per platform cleared to block — Instagram only today,
+         so the platform NAME is a format arg rather than baked into the copy. -->
+    <string name="settings_limit_title">Daily limit — %1$s</string>
+    <string name="settings_limit_subtitle">Block after %1$d %2$ss a day</string>
+    <!-- Motion access (D50). Shown only on devices that actually have a step sensor: asking for
+         a permission that would unlock nothing is worse than staying quiet. -->
+    <string name="settings_motion_title">Motion &amp; step access</string>
+    <string name="settings_motion_subtitle">Lets you walk off the block instead of tapping past it</string>
+    <string name="settings_motion_grant">Grant</string>
+    <!-- Permission-health alerts (D51). -->
+    <string name="settings_alerts_title">Permission alerts</string>
+    <string name="settings_alerts_subtitle">Warn me if ScrollKiller stops being able to block</string>
+
+    <!--
+        Permission-health banner + notification (D51). The copy NAMES the permission every time:
+        "tap to fix" with no noun is what people learn to ignore, and this is the one message that
+        has to be believed the first time.
+    -->
+    <string name="health_banner_title">ScrollKiller is not fully active</string>
+    <string name="health_banner_accessibility">The detection service is off — nothing is being counted.</string>
+    <string name="health_banner_overlay">Display over other apps is off, so the block can\'t appear. Your reels are still being counted.</string>
+    <string name="health_banner_degraded_title">Heads-up alerts are off</string>
+    <string name="health_banner_notifications">ScrollKiller works, but it can\'t warn you if blocking ever stops working while you\'re in another app.</string>
+    <string name="health_banner_fix">Fix</string>
+
+    <string name="notif_channel_health">App health</string>
+    <string name="notif_channel_health_description">Warns you when ScrollKiller can\'t block, so it never fails silently.</string>
+    <string name="notif_block_unavailable_title">You hit your limit — ScrollKiller can\'t block</string>
+    <string name="notif_block_unavailable_early_title">ScrollKiller can\'t block right now</string>
+    <string name="notif_block_unavailable_body">Display over other apps is off. Your reels are still being counted, but nothing will stop you. Tap to turn it back on.</string>
+    <!-- Guilt-pack picker (D43). The pack NAMES are chrome and are translated; the guilt LINES
+         themselves are not and never will be — they live in assets/guilt_pack.json, tagged with
+         the audience they were written for. -->
+    <string name="settings_pack_title">Guilt pack</string>
+    <string name="settings_pack_subtitle">Whose voice roasts you when the count climbs</string>
+    <string name="guilt_pack_en_in">India — Gen Z</string>
     <string name="settings_clear_title">Clear all data</string>
     <string name="settings_clear_subtitle">Delete every stored count on this device</string>
     <string name="settings_clear_button">Clear</string>
@@ -77,10 +119,24 @@
     <!-- Full-screen block screen (Phase 2). Clearly ScrollKiller's own UI. -->
     <string name="block_title">Reels are Locked</string>
     <string name="block_exit">Exit</string>
-    <string name="block_unlock">Unlock</string>
+    <!-- Formatted from BlockLimits.GRACE_MINUTES in BlockScreenController, never hardcoded, so
+         the promise on the button cannot drift from the reprieve the policy actually grants. -->
+    <string name="block_snooze">%1$d more minutes</string>
+
+    <!-- Physical unlock challenges (D50). The challenge button names BOTH its cost and its
+         reward, because the whole design rests on the user choosing the harder path knowingly:
+         a small free thing next to a larger earned one. Both numbers are format args from
+         ChallengeSpec.target and BlockLimits.CHALLENGE_GRACE_MINUTES. -->
+    <string name="block_challenge">Walk %1$d steps — get %2$d minutes</string>
+    <string name="challenge_walk_prompt">Walk %1$d steps</string>
+    <string name="challenge_reward">Finish and you get %1$d minutes</string>
+    <string name="challenge_cancel">Back</string>
     <!-- NOTE: guilt lines are NOT string resources. They live in assets/guilt_pack.json so the
-         pack can be categorised, weighted, and later swapped from a server without an app
-         update (D33) — a <string-array> can do none of those. See com.scrollkiller.guilt. -->
+         pack can be categorised, weighted, INTENSITY-TIERED, rotated daily, filtered by
+         audience, and later swapped from a server without an app update (D33/D41/D42/D43) — a
+         <string-array> can do none of those. There are exactly three guilt strings anywhere in
+         the app's code or resources, and they are the crash fallback in GuiltPack.FALLBACK.
+         See com.scrollkiller.guilt. -->
 
     <!-- Badge next to a platform whose count isn't calibrated yet (D32). Short by design:
          it sits inline next to the app name. -->
