@@ -1,0 +1,47 @@
+# Local gates — the half that runs BEFORE a commit exists.
+#
+# security.yml runs gitleaks in CI as the backstop, but by then the secret is
+# already in a commit and remediation is rotate-plus-rewrite instead of
+# prevention. That gap matters more here than it usually would: this repo goes
+# public after launch (D68), so anything that reaches history is permanent.
+#
+# One-time setup:
+#   pip install pre-commit
+#   pre-commit install
+#
+# Run over everything (not just staged files):
+#   pre-commit run --all-files
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.28.0
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
+    hooks:
+      # Same ruff version as requirements-dev.in. If the two drift, the hook and
+      # the CI gate start disagreeing, which is worse than having neither —
+      # you stop trusting the local one and push to find out.
+      - id: ruff
+        args: [--fix]
+        files: ^backend/
+      - id: ruff-format
+        files: ^backend/
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-yaml
+        # The workflows use GitHub's `on:` key, which a strict YAML parser reads
+        # as the boolean True. That is a quirk of the format, not a defect.
+        args: [--allow-multiple-documents]
+      - id: check-merge-conflict
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+        # Markdown uses two trailing spaces as a hard line break.
+        args: [--markdown-linebreak-ext=md]
+      - id: check-added-large-files
+        # The mascot masters in art/ are legitimately a few hundred KB. This
+        # catches the next 6.7 MB of raw generation output before it lands.
+        args: [--maxkb=1024]

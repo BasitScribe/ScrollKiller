@@ -1,0 +1,119 @@
+# The Android build, in CI for the first time in this project's life.
+#
+# Every green build before this one was local. That is exactly how ten source
+# files (Brand.kt, HoldDetector.kt, JumpDetector.kt and friends) stayed untracked
+# for weeks while the build passed every day — the local machine had them, git
+# did not, and nothing ever checked out a clean tree to find out. This workflow
+# is that check.
+#
+# ---------------------------------------------------------------------------
+# WHY TEMURIN HERE AND JETBRAINS LOCALLY (D67)
+# ---------------------------------------------------------------------------
+# `gradle/gradle-daemon-jvm.properties` pins the daemon JVM to vendor=jetbrains,
+# version=21 — that is Android Studio's bundled JBR, which is the right JVM for
+# a developer running builds from the IDE. GitHub's runners ship Temurin and
+# Zulu, never JBR.
+#
+# The pin is DELIBERATELY NOT RELAXED to make CI happy. Local and CI are allowed
+# to run different JVMs of the same version; what they must not do is drift into
+# each other's configuration, where a change made for CI's benefit silently
+# changes what a developer builds. If Gradle's daemon criteria refuses Temurin,
+# the fix goes in this file — never in the pin.
+#
+# ---------------------------------------------------------------------------
+# LINT ASYMMETRY — CI MAY PASS WHERE LOCAL FAILS
+# ---------------------------------------------------------------------------
+# `lintDebug`'s one known error lives in `local.properties` (a backslash-escaping
+# complaint). `local.properties` is gitignored and machine-specific, so it does
+# not exist on a runner and the error cannot fire here. A green lint in CI is
+# therefore NOT evidence that the local error is fixed. It is an environment
+# difference, not a fix — do not close the local finding on the strength of this
+# job going green.
+name: android
+
+# The two path lists are duplicated on purpose: GitHub's workflow parser does not
+# support YAML anchors/aliases, so `&name` / `*name` is a syntax error here, not a
+# deduplication. Keep the lists in sync by hand.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "gradle/**"
+      - "*.gradle.kts"
+      - "gradle.properties"
+      - "gradlew"
+      - "gradlew.bat"
+      - ".github/workflows/android.yml"
+  pull_request:
+    paths:
+      - "app/**"
+      - "gradle/**"
+      - "*.gradle.kts"
+      - "gradle.properties"
+      - "gradlew"
+      - "gradlew.bat"
+      - ".github/workflows/android.yml"
+
+# Path filters + cancel-in-progress are BUDGET, not hygiene (D68). This repo is
+# private, so Actions minutes are capped at 2,000/month, and an Android build is
+# the most minute-hungry job here. Without the filter every docs commit would pay
+# for a full Gradle run; without the cancel, three pushes in a minute would pay
+# three times for a result only the last one needs.
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # Temurin 21 — see the D67 note at the top of this file.
+      - name: Set up JDK
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      # Provides ANDROID_HOME and accepts the SDK licences. A clean clone needs
+      # no local.properties — verified locally by building from a fresh clone
+      # with the file absent.
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@90ddb51e90a5fd9ba75f40cf85156b7b41bf76a3 # v6
+
+      # One invocation, so Gradle schedules the whole graph itself instead of
+      # paying configuration cost four times.
+      - name: Build, test and lint
+        run: ./gradlew testDebugUnitTest lintDebug assembleDebug compileReleaseKotlin --stacktrace
+
+      # if: always() — the reports are most valuable precisely when the step
+      # above failed, which is when a default `on success` upload skips them.
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: android-test-reports
+          path: |
+            app/build/reports/
+            app/build/test-results/
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Upload debug APK
+        if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: app-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 14

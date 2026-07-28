@@ -1,0 +1,18 @@
+# Development and CI dependencies — the SOURCE file. Humans edit this one.
+#
+# Regenerate requirements-dev.txt with:
+#
+#   pip-compile --generate-hashes --output-file=requirements-dev.txt requirements-dev.in
+#
+# Kept separate from requirements.in so the runtime image never ships a test
+# runner, a linter or a type checker. Every package in an image is attack
+# surface Trivy has to scan and someone has to keep patched.
+
+-c requirements.txt
+
+httpx==0.28.1
+mypy==1.13.0
+pytest==8.3.4
+pytest-asyncio==0.24.0
+pytest-cov==6.0.0
+ruff==0.8.4

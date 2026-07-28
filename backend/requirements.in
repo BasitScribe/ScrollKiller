@@ -1,0 +1,16 @@
+# Runtime dependencies — the SOURCE file. Humans edit this one.
+#
+# requirements.txt is generated from it with `pip-compile --generate-hashes`, and
+# the container installs with `--require-hashes`, so every transitive package is
+# pinned to an exact version AND an exact artifact hash. Regenerate with:
+#
+#   pip install pip-tools
+#   pip-compile --generate-hashes --output-file=requirements.txt requirements.in
+#
+# Why hashes and not just versions: a version pin trusts the index to keep
+# serving the same bytes for that version. A hash pin does not. Adding this once
+# the lockfile has drifted means auditing what already shipped (D60).
+
+fastapi==0.118.0
+pydantic-settings==2.6.1
+uvicorn[standard]==0.32.1

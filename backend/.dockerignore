@@ -1,0 +1,27 @@
+# Keep the build context small AND keep secrets out of it. Anything listed here
+# can never end up in a layer by accident — .env is the one that matters, since a
+# COPY of the working directory would bake real credentials into the image.
+
+.env
+.env.*
+!.env.example
+
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+tests/
+requirements-dev.txt
+requirements-dev.in
+requirements.in
+pyproject.toml
+README.md
+Dockerfile
+.dockerignore

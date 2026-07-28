@@ -1,0 +1,61 @@
+# Secret scanning. Runs on EVERYTHING.
+#
+# This workflow is deliberately NOT path-filtered, and that is a decision rather
+# than an oversight. A secret can land in any file — a README, a test fixture, a
+# workflow, a JSON asset — and filtering a secret scanner by path is how you miss
+# the one in the file you did not think to filter for. It costs seconds, so it
+# does not threaten the 2,000-minute budget the Android job has to respect (D68).
+#
+# gitleaks in CI before the first secret exists is PREVENTION. Added after one is
+# committed it is history-rewriting plus credential rotation, and the leaked
+# value is already in every clone. There are no real credentials in the repo yet
+# — 3c adds the Google client secret and 3b a database URL — which is precisely
+# why this goes in now (D60).
+#
+# The local half of this is .pre-commit-config.yaml, which catches a secret
+# BEFORE the commit exists. This workflow is the backstop for anyone who has not
+# run `pre-commit install`.
+name: security
+
+on:
+  push:
+  pull_request:
+  # Weekly: gitleaks ships new detection rules, so a full-history scan finds
+  # things today's ruleset cannot. Sunday 03:00 UTC, off the usual working hours.
+  schedule:
+    - cron: "0 3 * * 0"
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    name: secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # Full history. A shallow clone only ever scans the tip, which misses
+          # the exact case that matters: a secret committed and then "removed" in
+          # a later commit is still in the history and still valid.
+          fetch-depth: 0
+
+      # NOTE ON LICENSING: gitleaks-action is free for personal accounts and for
+      # public repositories. It requires GITLEAKS_LICENSE only for repos owned by
+      # a GitHub ORGANISATION. This repo is under a personal account, so no
+      # secret is needed. If it is ever transferred to an org, the escape hatch
+      # is to drop this action and run the gitleaks container directly — same
+      # scanner, no licence:
+      #   docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.28.0 \
+      #     detect --source=/repo --redact --verbose
+      - name: Scan for secrets
+        uses: gitleaks/gitleaks-action@dcedce43c6f43de0b836d1fe38946645c9c638dc # v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
