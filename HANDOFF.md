@@ -7,7 +7,111 @@
 > for f in CLAUDE.md HANDOFF.md docs/*.md ScrollKiller/*.md; do echo "$(grep -c '^```' "$f") $f"; done
 > ```
 
-## ← CURRENT: D70/D71 — the block draws again, and cannot trap you
+## ← CURRENT: YouTube blocks + the reprieve is gone (D73/D74)
+
+Two owner decisions landed in code and tests. Neither has been on a phone. **Run these on the same
+build as the attach-timing runs below** — a block that never draws would make every check here look
+like a YouTube problem when it is the D72 question wearing a different hat, so if Run A fails, stop
+and report that first.
+
+### Run E — the YouTube limiter actually fires
+Set the YouTube limit low in Settings (the slider should now BE there — it appears automatically for
+any blocking platform).
+- [ ] **The YT slider exists in Settings.** If it does not, `blocksAtLimit` is false and nothing
+      below can pass.
+- [ ] Open Shorts and scroll past the limit → **the block covers Shorts**. Note the count it fired
+      at versus the limit you set; a few either way is the known, accepted D73 error bar, but write
+      the numbers down — they are the calibration data D57 has been waiting four sessions for.
+- [ ] The **Beta badge is still on YouTube** in the Apps tab. It must not have disappeared: the
+      count is still uncalibrated and D73 turns on nothing but eligibility.
+- [ ] **ReVanced too, if installed** (`app.revanced.android.youtube`) — same spec, same markers, and
+      its Shorts markers have never been separately toured, so this is the one that might miss.
+- [ ] **Instagram still blocks exactly as before.** YT joining must not have moved IG's behaviour.
+
+### Run F — the limiter does NOT fire where it must not
+This is the half that matters more, because D73 let an uncalibrated count cover a screen.
+- [ ] YouTube **home/subscriptions feed**, scrolled well past the limit → **no block, no count**.
+      The feed carries a Shorts SHELF and this is the exact false-match D28 dropped the `shorts_*`
+      guesses to avoid. A block here is a P0-adjacent bug: report it and stop.
+- [ ] YouTube **search results / a normal (non-Shorts) video / comments** → no block.
+- [ ] TikTok and Snapchat past their limits → **no block** (they stay BETA with no override).
+
+### Run G — "5 more minutes" is gone, and nothing went with it
+- [ ] The block panel shows **Exit** and **"Earn your way out — 15 minutes"**, and **no third
+      button**. No gap, no stray outline where it used to be.
+- [ ] **Exit still works** from the block, the chooser and a running challenge.
+- [ ] **Hardware BACK still works** from all three panels (it routes through
+      `BlockRootView.dispatchKeyEvent`, untouched by this change).
+- [ ] Complete a challenge → **15 minutes of quiet**, then the next reel blocks again. This is now
+      the only reprieve that exists, so if it broke, the block has become inescapable-by-effort —
+      still exitable, but the feature is dead.
+- [ ] On a device with **no available challenge**, the panel is Exit alone. That is intended (D74);
+      confirm Exit works there, because it is the only control left.
+
+---
+
+## ← CURRENT: the attach-timing diagnostic build (D72 pending)
+
+**This build is an EXPERIMENT, not a fix.** It exists to settle one question: when the block "fails
+to attach", is the window actually being refused, or are we reading `isAttachedToWindow` a frame too
+early and tearing down a healthy window?
+
+The hypothesis: `mAttachInfo` is set in `ViewRootImpl.performTraversals()`, a Choreographer frame
+*after* `addView` returns — so the check this project has made since D52 reads a healthy window as
+failed. If true, every "the ROM is refusing" verdict recorded so far was a misread of our own timing.
+
+**A side effect you should expect: the block may simply start working.** That is not a coincidence,
+it is the proof. What matters is the log either way.
+
+```
+adb logcat -c && adb logcat -s ScrollKiller
+```
+
+### Run A — the decisive lines
+Scroll past the limit on Instagram. Read the log in this order:
+- [ ] `block: addView returned; attachedSync=false` — **expected false**, and on its own it means
+      nothing. This is the reading the old code treated as a refusal.
+- [ ] `block: ATTACH LANDED (listener)` and/or `block: PROBE next-frame attached=true`.
+      **If either says true, the hypothesis is CONFIRMED** and there was never a ROM refusal.
+- [ ] `block: SHOWN on INSTAGRAM via=listener|next-frame` → the block is on screen.
+- [ ] If instead you get `block: PROBE deadline attached=false` followed by
+      `block: DIAG stage=no-attach-by-deadline ...` — the hypothesis is **dead** and the DIAG line
+      is the payload. Paste it whole; it carries `appOpSAW`, `bubbleAttached`, the device string and
+      the exact params.
+
+### Run B — the 30-second test that splits the top two hypotheses
+- [ ] Trigger a block **over an app that is not Instagram** (any app you can reach the limit in, or
+      re-point the limit temporarily). If the block appears everywhere EXCEPT Instagram, the cause
+      is Instagram calling `setHideOverlayWindows` — app-specific, not the ROM, and already written
+      down as a known risk in STORE_COPY.md.
+- [ ] Note `bubbleAttached=` in any DIAG line. **Bubble up + block refused** means nothing is
+      refusing our overlays wholesale and the difference is this window's shape (focusable,
+      full-screen, opaque — none of which the bubble is).
+
+### Run C — the crash is gone even if the cause is not
+- [ ] No crash, no red `FATAL EXCEPTION`, at `OverlayController.kt:415` or anywhere else.
+- [ ] If something still throws, it now logs `block: show() THREW — <exact.class.Name>: <message>`
+      or `block: render BLOCK branch threw`. **Paste that line** — it names the type, which is the
+      one thing the previous log never gave us.
+- [ ] The count keeps climbing after any such throw. Before, a throw here cancelled the Flow
+      collection and silently killed the counter for that surface.
+
+### Run D — invariant 6 still holds during the pending window
+The window is now on screen for up to 250ms with `view` unset — the old trap state, made safe by
+D71's ownership tracking. Confirm that safety is real:
+- [ ] Exit and hardware BACK both still work on a normally-shown block. ("5 more minutes" was
+      removed at D74 and is deliberately no longer on this list — see Run G above.)
+- [ ] `--es mode no_attach` (the injector now lies at the probe, exercising the real failure path):
+      window is removed at the deadline, **nothing left on screen**, launcher reachable.
+- [ ] Leave Instagram mid-block → block goes, no `SWEEP` line.
+
+**Not built this session, deliberately:** the accessibility fallback
+(`performGlobalAction`) and the retry-ladder rework. Both wait on this log — they reverse D49 and
+are large, and if the hypothesis holds this device may not need them.
+
+---
+
+## D70/D71 — the block draws again, and cannot trap you
 
 **This outranks everything below it, including the CI run.** Invariant 6 failed on a real device:
 the block covered the screen, Exit and both other buttons did nothing, Back did nothing, and the

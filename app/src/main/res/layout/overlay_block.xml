@@ -118,18 +118,21 @@
             android:text="@string/block_exit" />
 
         <!--
-            Both texts are set in code, formatted from BlockLimits.GRACE_MINUTES and
-            CHALLENGE_GRACE_MINUTES, so the promise on each button and the reprieve actually
-            granted are the same number by construction. The challenge button is HIDDEN unless
-            the device has a step sensor and the permission is held (MotionStatus) — a control
-            that cannot do its job has no business on a screen covering another app.
-        -->
-        <Button
-            android:id="@+id/block_snooze"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp" />
+            THE ONLY REPRIEVE (D74). A free "5 more minutes" button used to sit above this one; it
+            was removed by owner decision, so the way past the block is now earned or not taken.
+            Do not reintroduce it here without reading D74 — deleting the button while leaving the
+            handler, or vice versa, is how a dead control ends up on a screen covering another app.
 
+            Note what did NOT change: Exit above is untouched, and hardware Back still maps to it
+            through BlockRootView. Invariant 6 is about LEAVING, and a snooze was never a way out —
+            it kept you in the app with the block deferred.
+
+            The text is set in code, formatted from BlockLimits.CHALLENGE_GRACE_MINUTES, so the
+            promise on the button and the reprieve actually granted are the same number by
+            construction. The button is HIDDEN unless this device can run at least one challenge
+            (ChallengeAvailability) — a control that cannot do its job has no business on a screen
+            covering another app.
+        -->
         <Button
             android:id="@+id/block_challenge"
             android:layout_width="match_parent"

@@ -65,8 +65,10 @@ object SettingsPrefs {
     }
 
     /**
-     * Wall-clock millis until which the block is suppressed on [platform] — the "5 more minutes"
-     * reprieve (D49). 0 means no reprieve.
+     * Wall-clock millis until which the block is suppressed on [platform] — the reprieve (D49).
+     * 0 means none. Written by ONE caller since D74: completing a challenge. The free "5 more
+     * minutes" tap wrote here too and was removed; the storage shape is unchanged because a
+     * deadline was always the right representation, whoever earned it.
      *
      * PERSISTED, and that is the point: the app made a promise measured in minutes, and a
      * reprieve that a service restart or a crash silently revokes is a promise broken at the

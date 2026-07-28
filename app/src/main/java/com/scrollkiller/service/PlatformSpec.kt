@@ -78,6 +78,10 @@ enum class GatingMode { PASSTHROUGH, SHADOW, ENFORCED }
  * them into two knobs invites a future edit that sets one and forgets the other. If a Beta
  * platform ever legitimately needs to count toward limits, split the flag deliberately and
  * record why. See D32.
+ *
+ * **That split has now been taken, once, deliberately — see
+ * [PlatformSpec.blocksWhileUncalibrated] and D73.** [BETA] therefore no longer means "cannot
+ * block"; it means "the count is not calibrated", which is what it always actually measured.
  */
 enum class Maturity { STABLE, BETA }
 
@@ -142,7 +146,21 @@ enum class Maturity { STABLE, BETA }
  *   actually reads, and this is the value it falls back to before the user has ever touched the
  *   slider. See [BlockLimits] for the number and the range it may be moved within.
  * @param maturity how much the *count* is trusted (see [Maturity]). [Maturity.BETA] makes
- *   the platform ineligible to drive a limit or block no matter what [blockEnabled] says.
+ *   the platform ineligible to drive a limit or block no matter what [blockEnabled] says,
+ *   unless [blocksWhileUncalibrated] is also set.
+ * @param blocksWhileUncalibrated the deliberate override D32 said to add if it was ever needed:
+ *   this platform may enforce its limit even though its count is [Maturity.BETA]. **A product
+ *   decision that trades accuracy for coverage, and it is only defensible for a platform whose
+ *   SURFACE is device-verified** — the risk it accepts is blocking a few items early or late,
+ *   NOT blocking on the wrong screen. Set for YouTube by owner decision (D73); YouTube's
+ *   `reel_recycler` marker was toured on 2026-07-24 (D26) and it is [GatingMode.ENFORCED], so the
+ *   block can still only land on the Shorts player. It stays [isBeta] for the UI badge, because
+ *   the count really is uncalibrated and the badge is the honest disclosure of that.
+ *
+ *   This must NEVER be set on a [GatingMode.SHADOW] platform — TikTok counts app-wide and
+ *   Snapchat actively overcounts Chat/Stories/Map as "snaps", so an override there would cover a
+ *   screen on a number that is wrong about *what it counted*, not merely by how much.
+ *   `PlatformRegistryTest` enforces both halves of that rule.
  * @param advanceStrategy how one advance is derived from events (see [AdvanceStrategy]).
  * @param identityAnchors `viewIdResourceName` substrings naming the PER-ITEM container to
  *   anchor identity extraction on, for [AdvanceStrategy.IDENTITY_CHANGE] platforms. Order is
@@ -174,6 +192,7 @@ data class PlatformSpec(
     val identityAnchors: List<String> = emptyList(),
     val identityTitleHints: List<String> = emptyList(),
     val maturity: Maturity = Maturity.STABLE,
+    val blocksWhileUncalibrated: Boolean = false,
 ) {
     /**
      * The CANONICAL package for this platform — the first entry, and the one recorded on aggregate
@@ -198,14 +217,24 @@ data class PlatformSpec(
 
     /**
      * May this platform's count actually trigger the full-screen block? This — NOT the raw
-     * [blockEnabled] field — is what the overlay must ask, because two independent things
-     * have to be true: the block is switched on for the platform AND we trust the number
-     * enough to enforce on it ([Maturity.STABLE]).
+     * [blockEnabled] field — is what the overlay must ask.
      *
-     * A [Maturity.BETA] platform still counts and still shows in the UI; it just can never
-     * lock the screen on a number we've admitted is wrong. See D32.
+     * Two independent things have to be true: the block is switched on for the platform, AND the
+     * number is either trusted ([Maturity.STABLE]) or explicitly cleared to enforce while
+     * uncalibrated ([blocksWhileUncalibrated], D73).
+     *
+     * The override is written as a SECOND named condition rather than by flipping [maturity],
+     * because the two questions genuinely came apart here: "is this count calibrated" (no — it
+     * drives the Beta badge, and saying otherwise in the UI would be a false claim) and "may this
+     * count enforce a limit" (yes — the owner decided the coverage is worth the error bar). What
+     * D32 forbade was one knob silently answering both; what it prescribed, if they ever diverged,
+     * was exactly this — split them and record why.
+     *
+     * A BETA platform with no override still counts and still shows in the UI, and still can never
+     * lock the screen on a number we've admitted is wrong. See D32 and D73.
      */
-    val blocksAtLimit: Boolean get() = blockEnabled && maturity == Maturity.STABLE
+    val blocksAtLimit: Boolean
+        get() = blockEnabled && (maturity == Maturity.STABLE || blocksWhileUncalibrated)
 
     /** True when the UI should badge this platform as Beta (its count isn't calibrated). */
     val isBeta: Boolean get() = maturity == Maturity.BETA
@@ -284,10 +313,11 @@ object PlatformRegistry {
         // `pkg=app.revanced.android.youtube` going by (D52). Same markers, same IDENTITY_CHANGE
         // strategy, same spec: it IS YouTube Shorts, just built by someone else.
         //
-        // Its Shorts markers are NOT device-verified. That is safe to ship untoured precisely
-        // because YT is ENFORCED — an unmatched `reel_recycler` UNDERCOUNTS rather than counting a
-        // home feed — and because YT is BETA, so it cannot drive a limit or a block either way.
-        // Promotion still waits on a Shorts tour, now on both clients.
+        // The ReVanced client's Shorts markers are NOT separately device-verified. That is safe to
+        // ship untoured precisely because YT is ENFORCED — an unmatched `reel_recycler`
+        // UNDERCOUNTS rather than counting a home feed. Note this is now load-bearing in a way it
+        // was not before D73: YouTube CAN cover the screen, so a marker miss on ReVanced means the
+        // block never fires there, never that it fires on the wrong screen.
         packageNames = listOf("com.google.android.youtube", "app.revanced.android.youtube"),
         // Simple names (D27). YouTube Shorts scrolls the LEGACY support-library RecyclerView
         // (event class `android.support.v7.widget.RecyclerView`) — the old fully-qualified
@@ -309,7 +339,12 @@ object PlatformRegistry {
         // ENFORCED so a miss undercounts, never counts the home/subscriptions feed.
         surfaceMarkers = listOf("reel_recycler"),
         gating = GatingMode.ENFORCED,
-        blockEnabled = false,
+        // LIVE as of D73 — the second platform allowed to cover someone's screen, by owner
+        // decision. D57 had closed YouTube at BETA for v1 on the grounds that the 15±2-swipe and
+        // 30s-idle acceptance runs were never produced; that is still true, and the decision is to
+        // ship the block anyway rather than leave a self-declared doomscrolling surface unenforced
+        // for want of a calibration run. See `blocksWhileUncalibrated` below for what that trades.
+        blockEnabled = true,
         unitNoun = "short",
         displayName = "YouTube Shorts",
         shortName = "YT",
@@ -329,11 +364,20 @@ object PlatformRegistry {
         // capture proved. These title ids are NOT device-verified; that is tolerable precisely
         // because handle-first means they are consulted only when no handle exists at all.
         identityTitleHints = listOf("reel_title", "reel_video_title"),
-        // STILL BETA (D32/D34). The strategy above is implemented but NOT yet calibrated on a
-        // device: promotion to STABLE is gated on the two acceptance runs — 15 swipes must land
-        // 15 ±2, and 30s idle on one Short must not move the count at all. Until both pass,
-        // [blocksAtLimit] stays false: a number we haven't measured must never lock a screen.
+        // STILL BETA, and that is not a formality (D32/D34/D73). IDENTITY_CHANGE is implemented but
+        // has never been calibrated on a device: the two acceptance runs — 15 swipes landing 15 ±2,
+        // and 30s idle on one Short moving the count by zero — remain unrun. So the count carries
+        // an unmeasured error bar, the UI keeps its Beta badge saying so, and promotion to STABLE
+        // still waits on those runs. What CHANGED at D73 is only that BETA no longer implies "may
+        // not block"; see the override directly below.
         maturity = Maturity.BETA,
+        // The D32 escape hatch, taken deliberately (D73). YouTube enforces its limit despite the
+        // uncalibrated count. What this risks is bounded and worth naming: the block may land a few
+        // Shorts early or late, and an identity that flaps could in principle double-count. What it
+        // does NOT risk is the block landing on the wrong screen — that is held by ENFORCED gating
+        // on the toured `reel_recycler` marker (D26), which is unchanged. If the idle-flap case
+        // turns out to be real on a device, the fix is the calibration run, not removing this flag.
+        blocksWhileUncalibrated = true,
     )
 
     private val tiktok = PlatformSpec(

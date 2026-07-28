@@ -80,14 +80,18 @@ class PlatformRegistryTest {
     }
 
     @Test
-    fun `exactly one platform may cover a screen, and it is Instagram (D49)`() {
+    fun `exactly two platforms may cover a screen - Instagram and YouTube (D49-D73)`() {
         // THE safety net for the whole block feature. `blocksAtLimit` is the only thing standing
         // between a platform and a full-screen overlay on someone's phone, so what may hold it is
         // pinned here by name rather than left to whoever edits the registry next.
+        //
+        // YouTube joined at D73 by owner decision, through the `blocksWhileUncalibrated` override
+        // rather than by being declared calibrated. TikTok and Snapchat did NOT, and the reason is
+        // structural rather than a matter of taste — see the SHADOW test below.
         val blocking = PlatformRegistry.enabled.filter { it.blocksAtLimit }
         assertEquals(
-            "only Instagram may block; found ${blocking.map { it.platform }}",
-            listOf(Platform.INSTAGRAM),
+            "only Instagram and YouTube may block; found ${blocking.map { it.platform }}",
+            listOf(Platform.INSTAGRAM, Platform.YOUTUBE),
             blocking.map { it.platform },
         )
     }
@@ -125,36 +129,82 @@ class PlatformRegistryTest {
     }
 
     @Test
-    fun `a BETA platform can never drive a limit or block, whatever blockEnabled says (D32)`() {
-        // The invariant the whole Maturity flag exists for: we do not lock someone's screen on
-        // a count we've admitted is wrong. This must hold even if a future edit flips
-        // blockEnabled on a Beta platform, which is exactly the mistake it guards against.
+    fun `a BETA platform blocks only via the explicit override, and stays badged (D32-D73)`() {
+        // The invariant the whole Maturity flag exists for, in its post-D73 form: we do not lock
+        // someone's screen on a count we've admitted is wrong BY ACCIDENT. An uncalibrated platform
+        // may block only where someone wrote `blocksWhileUncalibrated = true` and said why — a
+        // stray `blockEnabled = true` alone still cannot do it, which is the mistake D32 guards.
         PlatformRegistry.enabled
             .filter { it.maturity == Maturity.BETA }
             .forEach { spec ->
-                assertFalse(
-                    "BETA ${spec.platform} must not be eligible to block",
-                    spec.blocksAtLimit,
-                )
+                if (!spec.blocksWhileUncalibrated) {
+                    assertFalse(
+                        "BETA ${spec.platform} must not be eligible to block without the override",
+                        spec.blocksAtLimit,
+                    )
+                }
+                // Unconditional, override or not: the badge describes the COUNT, and taking the
+                // override does not calibrate anything. A blocking platform that stopped admitting
+                // its number is unmeasured would be the app making a claim it cannot support.
                 assertTrue("BETA ${spec.platform} should be badged in the UI", spec.isBeta)
             }
-        // Stated positively too, so the day someone promotes YouTube they have to come here and
-        // mean it: the three unmeasured platforms are false on BOTH counts, not just derived-false.
-        listOf(Platform.YOUTUBE, Platform.TIKTOK, Platform.SNAPCHAT).forEach { platform ->
+        // Stated positively too, so promoting one of these takes an edit here and a reason:
+        // TikTok and Snapchat are false on ALL THREE counts, not merely derived-false.
+        listOf(Platform.TIKTOK, Platform.SNAPCHAT).forEach { platform ->
             val spec = PlatformRegistry.specFor(platform)
             assertFalse("$platform must not have blockEnabled set", spec.blockEnabled)
+            assertFalse("$platform must not override calibration", spec.blocksWhileUncalibrated)
             assertFalse("$platform must not be eligible to block", spec.blocksAtLimit)
         }
+    }
+
+    @Test
+    fun `the calibration override is legal only on an ENFORCED, toured surface (D73)`() {
+        // The line between the risk D73 accepted and the one it did not.
+        //
+        // Blocking on an uncalibrated count risks the block landing a few items EARLY OR LATE.
+        // Blocking on a SHADOW-gated count risks it landing on the WRONG SCREEN — TikTok counts
+        // app-wide, and Snapchat counts Chat/Stories/Map scrolls as "snaps". Those are not the same
+        // bet, and only the first one was taken. This is the test that keeps them apart when
+        // somebody later reads "we shipped a Beta blocker once" as a precedent for shipping another.
+        PlatformRegistry.enabled
+            .filter { it.blocksWhileUncalibrated }
+            .forEach { spec ->
+                assertEquals(
+                    "${spec.platform} may not override calibration without ENFORCED gating",
+                    GatingMode.ENFORCED,
+                    spec.gating,
+                )
+                assertTrue(
+                    "${spec.platform} may not override calibration with empty surface markers",
+                    spec.surfaceMarkers.isNotEmpty(),
+                )
+            }
+    }
+
+    @Test
+    fun `YouTube blocks on the toured reel_recycler marker and nothing else (D26-D73)`() {
+        // The YouTube counterpart to the Instagram marker test above, and it earns its place for
+        // the same reason: the near-miss is real. The home feed carries a Shorts SHELF, and the
+        // `shorts_*` id guesses that were dropped at D28 could have false-matched it — which now,
+        // post-D73, would mean a full-screen block over someone's subscriptions feed rather than
+        // merely a bad count. The one proven id is pinned by value.
+        val youtube = PlatformRegistry.specFor(Platform.YOUTUBE)
+        assertTrue(youtube.blocksAtLimit)
+        assertEquals(listOf("reel_recycler"), youtube.surfaceMarkers)
+        assertEquals(GatingMode.ENFORCED, youtube.gating)
     }
 
     @Test
     fun `only Instagram is calibrated - everything else ships BETA (D32)`() {
         // Instagram is the one platform calibrated against real swipes (49/50, D11).
         assertEquals(Maturity.STABLE, PlatformRegistry.specFor(Platform.INSTAGRAM).maturity)
-        // YouTube: surface proven (D26) AND advance signal now resolved (IDENTITY_CHANGE, D34),
-        // but not yet CALIBRATED — promotion to STABLE is gated on the two on-device acceptance
-        // runs (15 swipes → 15 ±2, and 30s idle → no movement). Until those pass, the number is
-        // unmeasured, and an unmeasured number does not get to lock someone's screen.
+        // YouTube: surface proven (D26) AND advance signal resolved (IDENTITY_CHANGE, D34), but
+        // still not CALIBRATED — promotion to STABLE remains gated on the two on-device acceptance
+        // runs (15 swipes → 15 ±2, and 30s idle → no movement). D73 let it block WITHOUT being
+        // calibrated, via an explicit override; it did not calibrate it. Keeping this assertion is
+        // the point — the day someone runs the acceptance and flips this to STABLE, the override
+        // becomes dead weight and should be deleted in the same commit.
         assertEquals(Maturity.BETA, PlatformRegistry.specFor(Platform.YOUTUBE).maturity)
         // TikTok / Snapchat: never toured, SHADOW counts app-wide (Snapchat overcounts).
         assertEquals(Maturity.BETA, PlatformRegistry.specFor(Platform.TIKTOK).maturity)

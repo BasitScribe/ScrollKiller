@@ -19,9 +19,11 @@ object BlockPolicy {
      *   the platform AND its count is trusted ([Maturity.STABLE]) — so a platform with
      *   unverified surface markers can't cover the feed (D19/D24), and one with a known-wrong
      *   count can't lock the screen on a bad number (D32).
-     * @param graceUntilMs wall-clock millis until which "5 more minutes" suppresses the block;
-     *   0 when there is no reprieve. Passed IN rather than read here so this stays pure and the
-     *   persistence decision (D49) lives in one place.
+     * @param graceUntilMs wall-clock millis until which an EARNED reprieve suppresses the block;
+     *   0 when there is none. Since D74 a completed challenge is the only thing that sets it —
+     *   the free "5 more minutes" tap wrote to this same deadline and was removed. Passed IN
+     *   rather than read here so this stays pure and the persistence decision (D49) lives in one
+     *   place.
      * @param nowMs wall clock, matching [graceUntilMs].
      */
     fun overlayFor(
@@ -41,7 +43,7 @@ object BlockPolicy {
      * Is a reprieve still running?
      *
      * Strictly BEFORE the deadline, so the instant the grace expires the next emission blocks —
-     * "5 more minutes" means five, and the boundary belongs to the block. A deadline in the past
+     * fifteen minutes means fifteen, and the boundary belongs to the block. A deadline in the past
      * (and the 0 that means "never granted") is simply not in grace, so no separate "has a
      * reprieve been set" flag exists to fall out of step with the timestamp.
      */

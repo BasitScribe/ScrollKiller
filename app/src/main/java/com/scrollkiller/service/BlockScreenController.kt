@@ -3,6 +3,8 @@ package com.scrollkiller.service
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.PixelFormat
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.util.Log
 import android.view.LayoutInflater
@@ -39,8 +41,6 @@ import com.scrollkiller.ui.theme.Brand
  * All methods run on the service main thread.
  *
  * @param onExit user chose to leave (Exit button or Back).
- * @param onSnooze user asked for [BlockLimits.GRACE_MINUTES] more minutes. Grants a timed
- *   reprieve.
  * @param onOpenChooser user asked to earn their way out (D50/D53). Opens the chooser; does NOT
  *   start anything. An ALTERNATIVE to Exit, never a replacement — every panel this class shows
  *   carries its own Exit.
@@ -50,15 +50,22 @@ import com.scrollkiller.ui.theme.Brand
  * @param onCancelChallenge user backed out of the challenge or the chooser, returning to the block.
  * @param onWindowLost the system took our window away without us asking (D52). The only
  *   trustworthy signal that the block is not on screen on a ROM whose permission query lies.
+ * @param onWindowConfirmed the window's attach LANDED. Fires asynchronously — see [show] for why
+ *   attachment cannot be judged synchronously — so the caller learns about a successful block from
+ *   here rather than from [show]'s return value.
+ * @param isBubbleAttached is our OTHER overlay window up right now? Purely diagnostic: the bubble
+ *   is the same window type over the same app, so it is the one bit that separates "this device
+ *   refuses our overlays" from "this device refuses THIS window".
  */
 class BlockScreenController(
     private val context: Context,
     private val onExit: () -> Unit,
-    private val onSnooze: () -> Unit,
     private val onOpenChooser: () -> Unit,
     private val onChooseChallenge: (ChallengeSpec?) -> Unit,
     private val onCancelChallenge: () -> Unit,
     private val onWindowLost: () -> Unit = {},
+    private val onWindowConfirmed: () -> Unit = {},
+    private val isBubbleAttached: () -> Boolean = { false },
 ) {
 
     /**
@@ -96,6 +103,31 @@ class BlockScreenController(
 
         /** Suppressed by [BlockRetryPolicy] after a recent failure. Costs nothing; inflates nothing. */
         COOLING_DOWN,
+
+        /**
+         * The window was added and whether it attached is NOT YET KNOWABLE.
+         *
+         * ## Why a synchronous answer was never available (the D52/D70/D71 through-line)
+         * `View.isAttachedToWindow()` returns `mAttachInfo != null`, and `mAttachInfo` reaches the
+         * view tree in `host.dispatchAttachedToWindow(...)`, which runs inside
+         * `ViewRootImpl.performTraversals()` — scheduled through the Choreographer by the
+         * `requestLayout()` in `ViewRootImpl.setView()`. It is not synchronous with `addView`.
+         *
+         * So the check this class has made since D52 — read `isAttachedToWindow` on the statement
+         * after `addView` — reads a healthy window as FAILED, roughly one frame too early. That
+         * single mistake is the suspected common cause of every block failure recorded so far, and
+         * it explains both shapes the bug has taken: before D71 the misjudged window was left in
+         * the WindowManager, attached a frame later and became the un-dismissable full-screen trap
+         * the user actually saw; after D71 it is removed a frame early and nothing appears at all.
+         *
+         * This value exists so the honest answer can be given. The caller must NOT treat it as
+         * failure — no warning, no runtime-denied flag, no cooldown — because nothing has failed
+         * yet. Resolution arrives later through [onWindowConfirmed] or [onWindowLost].
+         *
+         * THIS IS A HYPOTHESIS UNDER TEST, not a concluded fix. The probe logs what actually
+         * happens on the device so the next session reasons from evidence instead of a fourth guess.
+         */
+        PENDING_ATTACH,
     }
 
     private val windowManager =
@@ -154,6 +186,12 @@ class BlockScreenController(
     /** Whether the screen is currently being held awake. Tracked so the toggle is idempotent. */
     private var keepingScreenOn = false
 
+    /** Runs the attach probes. Main looper — every WindowManager touch in this class is on it. */
+    private val probeHandler = Handler(Looper.getMainLooper())
+
+    /** The platform of the in-flight attempt, for the diagnostic line. */
+    private var pendingPlatform: Platform? = null
+
     /** True while the block window is attached — verified, not assumed. */
     val isShowing: Boolean get() = view != null
 
@@ -167,13 +205,36 @@ class BlockScreenController(
      * view being detached without us calling [hide], and this is where we hear about it.
      */
     private val attachWatcher = object : View.OnAttachStateChangeListener {
-        override fun onViewAttachedToWindow(v: View) = Unit
+        /**
+         * The attach LANDED. This callback was a no-op until now, which is the irony of the whole
+         * saga: the correct, framework-provided answer to "did the window attach?" was already
+         * wired up and being ignored in favour of reading `isAttachedToWindow` a frame too early.
+         */
+        override fun onViewAttachedToWindow(v: View) {
+            Log.d(TAG, "block: ATTACH LANDED (listener) — the window exists")
+            confirmAttached(v, "listener")
+        }
 
         override fun onViewDetachedFromWindow(v: View) {
             // The window is gone either way, so ownership is released either way — otherwise a
             // system teardown would leave [attachedRoot] pointing at a dead view and the next
             // sweep would try to remove it twice.
-            if (attachedRoot === v) attachedRoot = null
+            val wasPending = attachedRoot === v && view !== v
+            if (attachedRoot === v) {
+                attachedRoot = null
+                probeHandler.removeCallbacksAndMessages(null)
+            }
+            if (wasPending) {
+                // Detached before the attach ever resolved — the D52 shape, where `addView`
+                // succeeds and the system takes the window away immediately. Reported here rather
+                // than left to the deadline probe, which would find the attempt already gone and
+                // say nothing at all.
+                pendingPlatform = null
+                retry.recordFailure(System.currentTimeMillis())
+                Log.w(TAG, "block: DETACHED WHILE PENDING — the system took it before it attached.")
+                onWindowLost()
+                return
+            }
             // hide() clears `view` BEFORE removing, so reaching here with it still set means the
             // detach was not ours.
             if (view !== v) return
@@ -192,13 +253,44 @@ class BlockScreenController(
      *
      * @return what actually happened. The caller MUST act on a non-success — see [ShowResult].
      */
-    @Suppress("UNUSED_PARAMETER") // kept for parity with the bubble + future per-platform copy
     fun show(platform: Platform, guiltLine: String): ShowResult {
+        // TOTALITY BOUNDARY. This method's contract is that it RETURNS a ShowResult; it must not
+        // also have an exceptional exit, and until now everything before `addView` — inflation,
+        // styling, findViewById, ChallengeAvailability's sensor and package queries, getString —
+        // was outside any catch. One of them threw on a real device and the exception propagated
+        // out through OverlayController.render, which is collected in a Flow: a throw there
+        // CANCELS THE COLLECTION, so the crash did not merely log, it silently killed the count
+        // collector for that surface. Two failures, one missing catch.
+        //
+        // Anything unexpected is a FAILED result plus a swept window, never a thrown exception.
+        return try {
+            showInternal(platform, guiltLine)
+        } catch (e: Exception) {
+            Log.e(TAG, "block: show() THREW — ${OverlayDiagnostics.cause(e)}", e)
+            // Whatever went wrong, a window may already exist. Getting rid of it matters more than
+            // knowing which line failed (D71).
+            sweepOrphan()
+            hide("show() threw")
+            retry.recordFailure(System.currentTimeMillis())
+            ShowResult.FAILED
+        }
+    }
+
+    @Suppress("UNUSED_PARAMETER") // kept for parity with the bubble + future per-platform copy
+    private fun showInternal(platform: Platform, guiltLine: String): ShowResult {
         // IDEMPOTENCE FIRST, before any permission query or inflation. A block that is already up
         // must cost one field read per emission and nothing else.
         view?.let { existing ->
             existing.findViewById<TextView>(R.id.block_guilt).text = guiltLine
             return ShowResult.ALREADY_SHOWING
+        }
+
+        // An attempt whose attach has not resolved yet. Inflating a second window here is how the
+        // pre-D71 build ended up stacking two full-screen overlays, so a pending attempt is left
+        // alone until its probe decides.
+        attachedRoot?.let {
+            Log.d(TAG, "block: PENDING_ATTACH still resolving; not inflating a second window")
+            return ShowResult.PENDING_ATTACH
         }
 
         val now = System.currentTimeMillis()
@@ -215,11 +307,6 @@ class BlockScreenController(
         val root = LayoutInflater.from(context).inflate(R.layout.overlay_block, null) as BlockRootView
         styleFromBrand(root)   // the layout ships colourless; brand is applied here (D58)
         root.findViewById<TextView>(R.id.block_guilt).text = guiltLine
-        val snooze = root.findViewById<Button>(R.id.block_snooze)
-        // Formatted from the constant, never written as copy: the sentence the user reads and the
-        // reprieve they are granted are then the same number by construction (D49).
-        snooze.text = context.getString(R.string.block_snooze, BlockLimits.GRACE_MINUTES)
-        snooze.setOnClickListener(tapListener("snooze", onSnooze))
         root.findViewById<Button>(R.id.block_exit).setOnClickListener(tapListener("block.exit", onExit))
 
         // The physical unlock (D50/D53). Shown only when this device can run AT LEAST ONE challenge
@@ -272,6 +359,14 @@ class BlockScreenController(
         root.addOnAttachStateChangeListener(attachWatcher)
 
         val params = createLayoutParams()
+        pendingPlatform = platform
+        // OWNERSHIP IS RECORDED BEFORE THE CALL, not after it (D71, tightened). `addView` can in
+        // principle register the view and then throw, and an ownership record that depends on a
+        // clean return is exactly the reasoning that produced the trap. A spurious record on a
+        // failed add is harmless — `removeView` on an unadded view only logs — while a missing one
+        // is a full-screen overlay nobody can dismiss. The asymmetry decides the ordering.
+        attachedRoot = root
+        layoutParams = params
         try {
             // DEBUG-only injection point, compiled out of release builds (D71). See
             // [BlockFailureInjector] for why the trap needs to be reproducible on demand.
@@ -279,45 +374,104 @@ class BlockScreenController(
                 throw WindowManager.BadTokenException("forced addView failure (DEBUG injector)")
             }
             windowManager.addView(root, params)
-            // OWNERSHIP IS RECORDED HERE — the statement after `addView` returns, before anything
-            // is verified or decided. Every path below this line is responsible for either keeping
-            // the window or removing it, and none of them may simply return (D71).
-            attachedRoot = root
         } catch (e: Exception) {
-            // The honest failure: the window manager said no.
-            // Record it so the next emissions are suppressed rather than inflating again — this
-            // return path is exactly where the churn came from (D52). Nothing was added, so there
-            // is nothing to remove.
-            root.removeOnAttachStateChangeListener(attachWatcher)
+            // The honest failure: the window manager said no, out loud, with a type and a message.
+            Log.w(TAG, "block: addView REFUSED — ${OverlayDiagnostics.cause(e)}", e)
+            Log.w(TAG, diagnostics("addView-threw", params))
+            removeFromWindow(root, "addView threw")
             retry.recordFailure(now)
-            Log.w(TAG, "block: addView refused. Cooling down.", e)
             return classifyFailure("addView threw")
         }
 
-        // VERIFY, do not assume. `addView` returning without throwing is not proof the window
-        // exists on a ROM that refuses the op at composition time; `isAttachedToWindow` is.
-        if (!root.isAttachedToWindow || BlockFailureInjector.shouldFakeNoAttach()) {
-            // THE path that produced the trap. The view IS in the WindowManager at this point, so
-            // it must come out before we return — a full-screen opaque overlay that nothing holds a
-            // reference to cannot be dismissed by any button, by Back, or by leaving the app.
-            removeFromWindow(root, "attach never landed")
-            retry.recordFailure(now)
-            Log.w(TAG, "block: addView returned but the view never attached; window removed. Cooling down.")
-            return classifyFailure("no attach")
-        }
+        // DO NOT JUDGE THE ATTACH HERE. See ShowResult.PENDING_ATTACH: `isAttachedToWindow` cannot
+        // be true yet, because the flag is set in performTraversals on a later frame. The
+        // synchronous reading is logged only as evidence for the hypothesis under test — if it is
+        // false here and true a frame later, every "the ROM is refusing" verdict this project has
+        // recorded was a misread of our own timing.
+        val syncAttached = root.isAttachedToWindow
+        Log.d(
+            TAG,
+            "block: addView returned; attachedSync=$syncAttached " +
+                "(expected false if the premature-check hypothesis holds) " +
+                "injector=${BlockFailureInjector.describe()}",
+        )
+        scheduleAttachProbes(root, params)
+        return ShowResult.PENDING_ATTACH
+    }
 
+    /**
+     * Watch for the attach landing, and give up on it at a deadline.
+     *
+     * THREE observation points, deliberately, because the point of this build is to find out which
+     * one is telling the truth:
+     *  - [attachWatcher]'s `onViewAttachedToWindow`, the framework's own callback and the earliest
+     *    honest answer;
+     *  - the next frame via [View.post], which runs after the traversal that sets `mAttachInfo`, so
+     *    it is where a healthy window MUST read attached;
+     *  - a [BlockLimits.ATTACH_DEADLINE_MS] backstop that decides the failure if neither fired.
+     *
+     * The window stays on screen for that window of time with [view] unset — which was the trap
+     * state before D71 and is safe now precisely because of it: [attachedRoot] owns it, every
+     * button and Back were wired before `addView`, `hide()` is unconditional, and `sweepOrphan()`
+     * runs on leaving the app. Invariant 6 holds throughout the pending period, which is the only
+     * reason this probe is allowed to exist at all.
+     */
+    private fun scheduleAttachProbes(root: View, params: WindowManager.LayoutParams) {
+        root.post {
+            if (attachedRoot !== root) return@post          // already resolved or torn down
+            val attached = root.isAttachedToWindow && !BlockFailureInjector.shouldFakeNoAttach()
+            Log.d(TAG, "block: PROBE next-frame attached=$attached")
+            if (attached) confirmAttached(root, "next-frame")
+        }
+        probeHandler.postDelayed(
+            {
+                if (attachedRoot !== root || view === root) return@postDelayed
+                // The injector's NO_ATTACH mode lies here rather than at addView, so the forced
+                // failure now exercises the REAL failure path — probes fire, deadline expires,
+                // window is removed — instead of a shortcut that no longer exists (D71).
+                val attached = root.isAttachedToWindow && !BlockFailureInjector.shouldFakeNoAttach()
+                Log.w(TAG, "block: PROBE deadline attached=$attached")
+                if (attached) {
+                    confirmAttached(root, "deadline")
+                } else {
+                    // NOW it is a genuine refusal: the window has had frames to attach and did not.
+                    Log.w(TAG, diagnostics("no-attach-by-deadline", params))
+                    removeFromWindow(root, "attach never landed")
+                    retry.recordFailure(System.currentTimeMillis())
+                    val result = classifyFailure("no attach after ${BlockLimits.ATTACH_DEADLINE_MS}ms")
+                    Log.w(TAG, "block: resolved PENDING_ATTACH → $result")
+                    onWindowLost()
+                }
+            },
+            BlockLimits.ATTACH_DEADLINE_MS,
+        )
+    }
+
+    /**
+     * The attach landed: promote the pending window to the tracked one.
+     *
+     * Idempotent — it can arrive from the listener, the next-frame post or the deadline, and
+     * whichever is first wins. Everything [showInternal] used to do on its synchronous success
+     * path happens here instead, because here is where success is actually known.
+     */
+    private fun confirmAttached(root: View, via: String) {
+        if (attachedRoot !== root || view === root) return
+        probeHandler.removeCallbacksAndMessages(null)
         root.requestFocus()
         view = root
-        layoutParams = params
         keepingScreenOn = false   // matches the freshly created params; no KEEP_SCREEN_ON yet
         retry.recordSuccess()
         Log.d(
             TAG,
-            "block: SHOWN on $platform (attached=${root.isAttachedToWindow} " +
-                "focused=${root.isFocused} injector=${BlockFailureInjector.describe()})",
+            "block: SHOWN on $pendingPlatform via=$via " +
+                "(focused=${root.isFocused} bubbleAttached=${isBubbleAttached()})",
         )
-        return ShowResult.SHOWN
+        onWindowConfirmed()
     }
+
+    /** The full state block for a failure. See [OverlayDiagnostics] for why it prints everything. */
+    private fun diagnostics(stage: String, params: WindowManager.LayoutParams): String =
+        OverlayDiagnostics.state(context, stage, params, isBubbleAttached(), pendingPlatform)
 
     /**
      * Word an ALREADY-OBSERVED failure for the user.
@@ -526,7 +680,12 @@ class BlockScreenController(
      * view is a no-op on the field, and `removeView` on an already-removed view only logs.
      */
     private fun removeFromWindow(v: View, reason: String) {
-        if (attachedRoot === v) attachedRoot = null
+        if (attachedRoot === v) {
+            attachedRoot = null
+            pendingPlatform = null
+            // A probe for a window that no longer exists would resolve a stale attempt.
+            probeHandler.removeCallbacksAndMessages(null)
+        }
         v.removeOnAttachStateChangeListener(attachWatcher)
         try {
             windowManager.removeView(v)
@@ -566,8 +725,12 @@ class BlockScreenController(
      *  - **Exit** — highest contrast on the ink ground (near-white fill, ink text). Impossible to miss,
      *    and it is also the healthiest choice, which an anti-doomscroll app should be nudging toward.
      *  - **Earn your way out / chooser rows** — cobalt fill. Clearly actionable, clearly secondary.
-     *  - **"5 more minutes"** — the quietest: a ghost outline. It stays fully available (never
-     *    disabled, never hidden) but it is the giving-in option and does not get celebrated.
+     *  - **Back / Cancel** — the quietest: a ghost outline. They return to a previous panel rather
+     *    than resolving anything, so they stay fully available and uncelebrated.
+     *
+     * The ghost tier used to have a third member, the free "5 more minutes" button — the giving-in
+     * option, deliberately the quietest thing on the screen. It was removed outright at D74; what
+     * remains of that reasoning is that Exit stays loudest, which was never about the snooze.
      */
     private fun styleFromBrand(root: View) {
         root.setBackgroundColor(Brand.INK_BLOCK.toInt())
@@ -584,7 +747,7 @@ class BlockScreenController(
             stylePrimaryExit(root.findViewById(id))
         }
         styleSecondary(root.findViewById(R.id.block_challenge))
-        listOf(R.id.block_snooze, R.id.chooser_back, R.id.challenge_cancel).forEach { id ->
+        listOf(R.id.chooser_back, R.id.challenge_cancel).forEach { id ->
             styleGhost(root.findViewById(id))
         }
     }
@@ -630,6 +793,10 @@ class BlockScreenController(
         val owned = attachedRoot
         if (tracked == null && owned == null) return
 
+        // Any in-flight attach probe is about to be resolving a window that is being torn down.
+        probeHandler.removeCallbacksAndMessages(null)
+        pendingPlatform = null
+
         // Cleared BEFORE removeView: the detach callback is about to fire, and it must not be
         // mistaken for the system taking the window away from us.
         view = null
@@ -641,7 +808,7 @@ class BlockScreenController(
         tracked?.let { removeFromWindow(it, reason) }
         // UNCONDITIONAL, and not guarded on `view` being set (D71). hide() used to open with
         // `val v = view ?: return`, which meant that once a window went untracked every dismissal
-        // path — Exit, Back, snooze, challenge completion, leaving the app — silently did nothing
+        // path — Exit, Back, challenge completion, leaving the app — silently did nothing
         // while the window stayed on screen. A teardown must be able to tear down whatever exists,
         // not only what it expected to exist.
         if (owned != null && owned !== tracked) {

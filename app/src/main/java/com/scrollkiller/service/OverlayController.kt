@@ -113,11 +113,15 @@ class OverlayController(
         BlockScreenController(
             context,
             onExit = ::onExit,
-            onSnooze = ::onSnooze,
             onOpenChooser = ::onOpenChooser,
             onChooseChallenge = ::onChooseChallenge,
             onCancelChallenge = ::onCancelChallenge,
             onWindowLost = ::onBlockWindowLost,
+            onWindowConfirmed = ::onBlockWindowConfirmed,
+            // Diagnostic only: the one bit that separates "this device refuses our overlays" from
+            // "this device refuses the BLOCK's window". Same window type, same app, different
+            // shape — see OverlayDiagnostics.
+            isBubbleAttached = { bubble?.isAttachedToWindow == true },
         )
     }
 
@@ -155,7 +159,10 @@ class OverlayController(
     /** The doom surface we're currently on (null = off-surface). */
     private var currentPlatform: Platform? = null
 
-    /** Last summary seen, so [onSnooze] and [collapseNudge] can re-render without a new emission. */
+    /**
+     * Last summary seen, so [onChallengeComplete] and [collapseNudge] can re-render without a new
+     * emission.
+     */
     private var lastSummary = TodaySummary.EMPTY
 
     private val windowManager =
@@ -412,30 +419,36 @@ class OverlayController(
                 // `canDrawOverlays` returns true while AppOps refuses the window — and, as D70
                 // found, it can also be true while a stale flag of ours claims otherwise. Only the
                 // attempt itself knows.
-                val result = block.show(platform, GuiltLines.blockLine(context, summary.total))
-                Log.d(TAG, "block: attempt at $forLimit/$limit on $platform → $result")
-                when (result) {
-                    BlockScreenController.ShowResult.SHOWN,
-                    BlockScreenController.ShowResult.ALREADY_SHOWING,
-                    -> {
-                        // The window verifiably exists. Clear both the observed denial and any
-                        // warning left over from when it did not, so a fixed problem stops
-                        // announcing itself.
-                        if (SettingsPrefs.overlayRuntimeDenied(context)) {
-                            SettingsPrefs.setOverlayRuntimeDenied(context, false)
-                            Log.d(TAG, "block: window is back; clearing the runtime-denied flag")
-                        }
-                        notifier.cancel()
+                // The whole branch is inside a failure boundary. `block.show` is already total, but
+                // GuiltLines, the prefs reads and the notifier are not, and a throw ANYWHERE in
+                // here propagates into the Flow's onEach — which cancels the collection and
+                // silently stops the count updating for this surface. A crashed block must not
+                // also take the counter down with it.
+                try {
+                    val result = block.show(platform, GuiltLines.blockLine(context, summary.total))
+                    Log.d(TAG, "block: attempt at $forLimit/$limit on $platform → $result")
+                    when (result) {
+                        BlockScreenController.ShowResult.SHOWN,
+                        BlockScreenController.ShowResult.ALREADY_SHOWING,
+                        -> onBlockWindowConfirmed()
+
+                        BlockScreenController.ShowResult.NO_PERMISSION,
+                        BlockScreenController.ShowResult.FAILED,
+                        -> onBlockWindowLost()
+
+                        // NOTHING HAS FAILED YET. The window was added and its attach has not
+                        // resolved — no warning, no runtime-denied flag, no cooldown. Treating this
+                        // as a failure is precisely the premature judgement under investigation:
+                        // resolution arrives later via onWindowConfirmed or onWindowLost.
+                        BlockScreenController.ShowResult.PENDING_ATTACH -> Unit
+
+                        // Suppressed by the cooldown after a recent refusal. The user has already
+                        // been warned and the flag is already set — do nothing at all, which is the
+                        // point: this path used to inflate a fresh block_root per reel.
+                        BlockScreenController.ShowResult.COOLING_DOWN -> Unit
                     }
-
-                    BlockScreenController.ShowResult.NO_PERMISSION,
-                    BlockScreenController.ShowResult.FAILED,
-                    -> onBlockWindowLost()
-
-                    // Suppressed by the cooldown after a recent refusal. The user has already been
-                    // warned and the flag is already set — do nothing at all, which is the entire
-                    // point: this is the path that used to inflate a fresh block_root per reel.
-                    BlockScreenController.ShowResult.COOLING_DOWN -> Unit
+                } catch (e: Exception) {
+                    Log.e(TAG, "block: render BLOCK branch threw; the collector survives", e)
                 }
             }
             SurfaceOverlay.BUBBLE -> {
@@ -567,6 +580,21 @@ class OverlayController(
      * for its cooldown, and the render path will try again on the next emission after that —
      * which is what makes a ROM that relents recover on its own.
      */
+    /**
+     * The block's window is verifiably on screen.
+     *
+     * Arrives from [BlockScreenController.show] when a block was already up, and asynchronously
+     * from the attach probe when a new one lands. Clears the observed denial and the warning,
+     * so a fixed problem stops announcing itself.
+     */
+    private fun onBlockWindowConfirmed() {
+        if (SettingsPrefs.overlayRuntimeDenied(context)) {
+            SettingsPrefs.setOverlayRuntimeDenied(context, false)
+            Log.d(TAG, "block: window is up; clearing the runtime-denied flag")
+        }
+        notifier.cancel()
+    }
+
     private fun onBlockWindowLost() {
         SettingsPrefs.setOverlayRuntimeDenied(context, true)
         Log.w(TAG, "block: window unavailable — marking overlay runtime-denied and warning the user")
@@ -575,8 +603,8 @@ class OverlayController(
 
     private fun hideBlock(reason: String = "unspecified") {
         GuiltLines.endBlockEpisode()
-        // Releases the step sensor. Routed through here rather than sprinkled across the exit,
-        // snooze and completion paths for the same reason endBlockEpisode is: a dismissal that
+        // Releases the step sensor. Routed through here rather than sprinkled across the exit and
+        // completion paths for the same reason endBlockEpisode is: a dismissal that
         // forgets leaves a sensor registered by a background service, which is a battery
         // complaint nobody ever traces back to us (D50).
         challenge.stop()
@@ -649,13 +677,18 @@ class OverlayController(
     }
 
     /**
-     * Challenge completed — grant the EARNED reprieve.
+     * Challenge completed — grant the reprieve. **Since D74 this is the ONLY way to get one**; the
+     * free "5 more minutes" tap that used to share this persistence path is gone.
      *
-     * Deliberately a different, larger constant than [onSnooze]'s: granting the same as the free
-     * tap would make the challenge strictly dominated and the feature dead on arrival. Same
-     * persistence path as the tap, so everything D49 established about a reprieve — it survives
-     * leaving Instagram, it survives a service restart, it re-blocks on the next reel after it
-     * lapses, and no timer is involved — holds here unchanged.
+     * Everything D49 established about a reprieve still holds, because the mechanism is unchanged:
+     * the deadline is PERSISTED (see [SettingsPrefs.graceUntilMs]) rather than held in memory, so
+     * it survives leaving Instagram and survives the service being restarted — a reprieve that a
+     * process death silently revokes is a promise broken at the worst possible moment.
+     *
+     * Nothing schedules the re-block. There is no timer: the grace is a deadline the render path
+     * already compares against on every count emission, so the next reel AFTER it expires blocks
+     * and no reel before it does. A timer would be a second source of truth for the same instant,
+     * and would have to be cancelled correctly on every exit path.
      */
     private fun onChallengeComplete() {
         // Buzz FIRST, before the block comes down. On a face-down hold this is the only signal the
@@ -702,29 +735,6 @@ class OverlayController(
             // go away. Exit's promise is "the block is gone", not "you are on your home screen".
             Log.w(TAG, "block: exit → launcher intent FAILED; block is down regardless", e)
         }
-    }
-
-    /**
-     * "5 more minutes": grant a timed reprieve and take the block down.
-     *
-     * The deadline is PERSISTED (see [SettingsPrefs.graceUntilMs]) rather than held here, so the
-     * promise survives leaving Instagram and survives the service being restarted — a reprieve
-     * that a process death silently revokes is a promise broken at the worst possible moment.
-     *
-     * Nothing schedules the re-block. There is no timer: the grace is a deadline the render path
-     * already compares against on every count emission, so the next reel AFTER it expires blocks
-     * and no reel before it does. A timer would be a second source of truth for the same instant,
-     * and would have to be cancelled correctly on every exit path.
-     */
-    private fun onSnooze() {
-        val platform = currentPlatform ?: return
-        SettingsPrefs.setGraceUntilMs(
-            context,
-            platform,
-            System.currentTimeMillis() + BlockLimits.GRACE_MS,
-        )
-        hideBlock("snooze")
-        render(platform, lastSummary)
     }
 
     /**

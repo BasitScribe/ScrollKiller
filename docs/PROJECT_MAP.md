@@ -2,7 +2,7 @@
 
 > **Single entry point.** Living audit + index of every doc in the project. Pointers only — never a
 > dump of ROADMAP/DECISIONS.
-> Last audited: **2026-07-28** (Phase 2 · challenge suite COMPLETE 4/4 · brand pass done D58 · YouTube v1-decided BETA D57 · **D70/D71 block fixes in tree, device verification PENDING and blocking — invariant 6 is not closed**).
+> Last audited: **2026-07-28** (Phase 2 · challenge suite COMPLETE 4/4 · brand pass done D58 · **YouTube NOW BLOCKS via the D73 override, reversing D57** · **"5 more minutes" DELETED, D74** · **D70/D71/D73/D74 all in tree with device verification PENDING — invariant 6 is not closed, and D72's attach-timing question is still unanswered**).
 
 ## Read order for a new session
 
@@ -89,13 +89,13 @@ mindmap
       stats TimeEstimate
     Platforms
       IG STABLE ENFORCED blocks
-      YT BETA ENFORCED ReVanced pkg
+      YT BETA ENFORCED blocks via override D73
       TikTok BETA SHADOW
       Snapchat BETA SHADOW
     Surfaces
       Dashboard Today Apps Settings
       Bubble expand panel
-      Block Exit grace chooser challenge
+      Block Exit chooser challenge
       Guilt nudges Home bubble block
 ```
 
@@ -134,7 +134,7 @@ mindmap
 - **Open P2 work**
   - Expand guilt pack T3→40, T4→150 (content; ~18 each now)
   - Challenges: **suite COMPLETE 4/4, all device-verified**; only fake-scroll feed remains, and it is not a sensor challenge
-  - **YT→STABLE: CLOSED as a v1 decision (D57), no longer "pending".** The IDENTITY_CHANGE strategy works (D34) and ReVanced counts (D52); what is *undone* is flipping the enum + the 15±2 swipe / 30s idle acceptance. Until then YT counts and displays but can never drive a block (`blocksAtLimit = blockEnabled && STABLE`).
+  - **YT BLOCKS as of D73** (reversing D57), but is **still not calibrated** — the 15±2 swipe / 30s idle acceptance runs remain the open item, and they now matter *more*, not less, because an uncalibrated count is covering a screen. Running them is what lets `maturity` go STABLE and the override be deleted.
   - Many overlay/guilt HANDOFF verifications still unchecked
 - **Phase 3 ← CURRENT. 3a SHIPPED 2026-07-28**, 3b next. Sub-phases: **3a** ✅ CI + skeleton + security baseline → **3b** models + migrations → **3c** auth → **3d** sync + `/me/today` → **3e** client queue. **3a–3d touch zero `app/` files**, so the shipped offline app cannot regress.
   - **3a's finding was that the repo did not build from a clean checkout** — 24 untracked paths including `Brand.kt` and both hold sources, plus `gradlew` missing its exec bit and no `.gitattributes`. All fixed and verified by building a fresh clone with no `local.properties`.
@@ -157,12 +157,14 @@ mindmap
 | Platform | Packages | Marker | Gating | Advance | Maturity | blocksAtLimit |
 |----------|----------|--------|--------|---------|----------|---------------|
 | Instagram | `com.instagram.android` | `clips_viewer` | ENFORCED | DELTA_Y_FORWARD 200ms | **STABLE** | **true** |
-| YouTube | `com.google.android.youtube`, `app.revanced.android.youtube` | `reel_recycler` | ENFORCED | IDENTITY_CHANGE 500ms | **BETA by v1 decision** (D57) | false |
+| YouTube | `com.google.android.youtube`, `app.revanced.android.youtube` | `reel_recycler` | ENFORCED | IDENTITY_CHANGE 500ms | **BETA** (still uncalibrated) | **true via override** (D73) |
 | TikTok | `com.zhiliaoapp.musically` | feed_* candidates | SHADOW | DELTA_Y_FORWARD | BETA | false |
 | Snapchat | `com.snapchat.android` | `spotlight` | SHADOW | DELTA_Y_FORWARD | BETA | false |
 
-- `blocksAtLimit = blockEnabled && STABLE` — never ask raw `blockEnabled` alone
-- ⚠️ **Instagram is the ONLY platform that can block, and that is a v1 DECISION, not a gap (D57).** YT/TikTok/Snapchat are BETA: they count and display but cannot drive a limit. YT's Shorts capture was requested across four sessions and never produced, so promotion was refused on absent evidence — `blocksAtLimit` decides whether the app covers someone's screen. Promotion = one enum flip once the capture exists.
+- `blocksAtLimit = blockEnabled && (STABLE || blocksWhileUncalibrated)` — never ask raw `blockEnabled` alone
+- ⚠️ **TWO platforms can block: Instagram and YouTube (D73, reversing D57).** YouTube's Shorts capture was never produced across four sessions, and it still has not been — so YT was NOT promoted to STABLE. It blocks via an explicit `blocksWhileUncalibrated` override, keeps `Maturity.BETA`, and keeps its Beta badge, because the count really is unmeasured and the badge is the honest disclosure. **`Maturity.BETA` therefore no longer implies "cannot block"** — it means "the count is not calibrated", which is all it ever measured. The override is the split D32 prescribed; taking it was an owner decision that trades a few Shorts of accuracy for coverage.
+- ⚠️ **The override is ILLEGAL on a SHADOW platform, and a test enforces it.** TikTok and Snapchat stay barred, and not by convention: their counts are wrong about *what* they counted (TikTok app-wide, Snapchat counts Chat/Stories/Map as "snaps"), so an override there covers a screen on the wrong basis entirely. What makes YT tolerable is ENFORCED gating on the toured `reel_recycler` — a marker miss undercounts, it never blocks the home feed's Shorts shelf.
+- **When the acceptance capture finally lands:** flip `maturity` to STABLE and **delete `blocksWhileUncalibrated` in the same commit** — an override that no longer overrides is an invitation to reuse it somewhere it does not belong.
 - `packageNames: List` (D52) — ReVanced shares YT row in `daily_counts`
 - Enums: `AdvanceStrategy`, `GatingMode`, `Maturity`, `SurfaceMatcher`
 
@@ -183,7 +185,19 @@ mindmap
 - Full-screen `TYPE_APPLICATION_OVERLAY` at user limit
 - Outcomes: `SHOWN / ALREADY_SHOWING / NO_PERMISSION / FAILED / COOLING_DOWN` (D52). **No permission
   pre-check** — attempt first, classify the failure after (D70)
-- Attach verified; detach listener; hide reasons logged
+- ⚠️ **Attach is verified ASYNCHRONOUSLY and `PENDING_ATTACH` is a real outcome.** `isAttachedToWindow`
+  cannot be true right after `addView` — `mAttachInfo` is set in `ViewRootImpl.performTraversals()`,
+  a frame later. The synchronous check made since D52 read healthy windows as refused; **that is the
+  leading suspect for every block failure in this project's history**, including the D71 trap (the
+  orphan *was* the block) and the flag D70 found latched. Three observation points:
+  `onViewAttachedToWindow`, a next-frame `post`, and a 250ms deadline (`ATTACH_DEADLINE_MS`).
+  **HYPOTHESIS UNDER TEST — see HANDOFF Runs A–D before treating it as settled**
+- `OverlayDiagnostics` — one greppable state block on a genuine refusal: exception class+message,
+  `canDrawOverlays`, AppOps SAW mode (**diagnostic only, never a gate** — D70), `bubbleAttached`
+  (the bit that splits "device refuses our overlays" from "device refuses THIS window"), device, params
+- `show()` is TOTAL — whole body inside a failure boundary; `render`'s BLOCK branch is wrapped too,
+  because a throw in a `Flow.onEach` cancels the collection and kills the count collector
+- detach listener; hide reasons logged
 - **`attachedRoot` = ownership, recorded when `addView` RETURNS, not when it succeeds (D71).** The
   `!isAttachedToWindow` path used to return with the window still in the WindowManager and nothing
   referencing it — a full-screen opaque overlay no button, no Back and no app-switch could dismiss,
@@ -192,11 +206,11 @@ mindmap
 - Panels live in a `ScrollView fillViewport` so Exit is reachable at any font scale
 - Every button / chooser row / Back logs a **pair**: `TAP <n>` then `TAP <n> → <outcome>`
 - `BlockFailureInjector` — DEBUG-only, `adb ... -a com.scrollkiller.BLOCK_FAIL --es mode no_attach|throw|off`
-- Always: **Exit**, **Back**, **"5 more minutes"** (`BlockLimits.GRACE_MINUTES=5`), challenge path
+- Always: **Exit**, **Back**, challenge path. **"5 more minutes" was DELETED (D74)** — button, string, `GRACE_MINUTES`/`GRACE_MS` and the `onSnooze` handler. The only reprieve is now a completed challenge (15 min). Invariant 6 is unaffected: a snooze was never an exit
 - **THREE panels, one window** (D50/D53): `block_panel` / `chooser_panel` / `challenge_panel`; child swaps via one `showPanel` helper so "exactly one visible" cannot be broken piecemeal. Root never GONE (D30). **Each panel carries its own Exit, listed first** for TalkBack traversal — invariant 6
 
 #### BlockLimits
-- Default 100; slider 20–300 step 10; grace 5 min; challenge grace **15** min (must be > free tap)
+- Default 100; slider 20–300 step 10; challenge grace **15** min — the ONE reprieve since D74
 - Retry cooldown 30s (`BlockRetryPolicy`)
 
 #### PermissionHealth (D51/D52, corrected by D70)
@@ -265,7 +279,7 @@ state, not a bug; the test says so and names what to do when the next strategy i
 - Engine shape: `ChallengeSpec` (data) → `ChallengeSensors.sourceFor` → `ChallengeSensorSource` impl; pure detector beside each thin source (`JumpDetector`, `HoldDetector`)
 - **Counts vs holds** — `ProgressUnit {COUNT, SECONDS}`. Counts are monotonic; a hold's `onHoldElapsed` is absolute and **resets to 0 on a break** (never pauses — the anti-cheat), so `isComplete` is NOT sticky for holds. Ring counts down for seconds, arc always fills
 - **Holds need two things counts didn't** (D54): `FLAG_KEEP_SCREEN_ON` while the challenge panel is up (a 30s default screen timeout == the hold length, and a sleeping screen stops the sensor), cleared on every teardown path; and `ChallengeHaptics` — 400ms buzz complete / two-pulse break — because a face-down ring is invisible and flipping up to check destroys the hold
-- Reward **flat 15 min** for every challenge vs tap 5 min — inequality tested; flat was chosen over effort-scaled so choice stays about accessibility, not optimisation (D53)
+- Reward **flat 15 min** for every challenge, and since D74 it is **the only reprieve in the app** (the 5-min free tap it used to be measured against is deleted, and D50's asserted inequality with it). Flat was chosen over effort-scaled so choice stays about accessibility, not optimisation (D53)
 - **Availability is per-spec** (`ChallengeAvailability`), not app-wide: only the step sensors need `ACTIVITY_RECOGNITION`, so a denied motion permission must not hide jump/holds. `MotionStatus` remains the step-specific question for Settings + PermissionHealthReader
 - Chooser panel + "Surprise me" (never repeats the previous draw); unavailable → no row
 
@@ -320,9 +334,24 @@ Pure JVM coverage for: detectors, registry, BlockPolicy/Limits/Retry, Permission
 ---
 
 ### Current HANDOFF focus (see HANDOFF.md)
+**Attach-timing diagnostic (CURRENT, an experiment not a fix):** does `attachedSync=false` become
+`ATTACH LANDED` / `PROBE next-frame attached=true` one frame later? If yes, the ROM never refused
+anything and D52's premature check is the root cause of the whole saga. If no, the
+`DIAG stage=no-attach-by-deadline` line is the payload. Run B (**block over a NON-Instagram app**)
+splits ROM-refusal from Instagram's `setHideOverlayWindows`. Still owed: the `:415` stack trace.
+**Not built on purpose:** the `performGlobalAction` fallback and the retry ladder — they reverse D49
+and wait on this evidence.
+
+**D73/D74 — YouTube blocks, the reprieve is gone (CURRENT, unverified):** Runs E–G in HANDOFF. The
+YT limit slider must APPEAR in Settings · Shorts blocks and **the feed does not** (the Shorts-shelf
+false-match is the thing to watch) · the **Beta badge must survive** · ReVanced too · the block panel
+has exactly two buttons · a completed challenge is now the only reprieve, so if it broke the feature
+is dead. **Record the count YT actually fires at** — that is the D57 calibration data, four sessions
+owed.
+
 **D70/D71 — the block screen (CURRENT, blocking):** block draws with the permission granted and the
 stale flag self-clears · `BLOCK PREVENTED` must NOT appear · **every way out works and logs a pair** —
-Exit, "5 more minutes", chooser, hardware BACK from all three panels · forced-failure
+Exit, chooser, hardware BACK from all three panels · forced-failure
 (`--es mode no_attach`) leaves **no window on screen and no stacking** · Exit reachable at max font
 size. Invariant 6 stays open until all four runs pass.
 
