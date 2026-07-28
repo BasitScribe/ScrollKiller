@@ -1,6 +1,320 @@
 # HANDOFF — manual on-device test checklist
 
-## ← CURRENT: permission integrity — never fail silently (D51)
+> **Editing any doc? Check fence balance before you finish.** An unclosed ``` does not fail a build —
+> it silently swallows the rest of the vault's render, which is how one stray fence in PROJECT_MAP
+> hid everything after it. Every count below must be **EVEN** (D56):
+> ```
+> for f in CLAUDE.md HANDOFF.md docs/*.md ScrollKiller/*.md; do echo "$(grep -c '^```' "$f") $f"; done
+> ```
+
+## ← CURRENT: the brand pass (D58)
+
+Visual only — no detection, block, challenge or count logic changed. Build green: **284 tests**,
+`assembleDebug` + `compileReleaseKotlin`. Audited: no brand ARGB literal survives outside `Brand.kt`.
+
+### Run A — there is a brand, and it does not come from your wallpaper
+- [ ] No purple anywhere: Home, Apps, Settings, block screen, chooser, challenge panels.
+- [ ] **Change your wallpaper to something violently coloured, reopen the app.** The palette must not
+      move. `dynamicColor` is deleted; if the app shifts hue, it came back.
+- [ ] Sweep **light AND dark** (system toggle) on all three tabs. Text must stay readable on both —
+      dark theme steps primary down to light cobalt on purpose.
+- [ ] Launch cold: the window should flash the brand canvas, **not white** (and not white on a
+      dark-theme device).
+
+### Run B — Home reads as one object
+- [ ] Hero card: mascot + count + label + time on a faintly tinted card.
+- [ ] Cross **50** and then **150**. The whole card's tint shifts with the state, not just the
+      numeral's colour — mint → orange → red.
+- [ ] The guilt line (once above 50) has an accent rule down its left edge.
+
+### Run C — nav bar
+- [ ] Today tab shows the **mascot's head in full colour** — it must NOT be a flat blue silhouette
+      (it is an `Image`, deliberately untinted).
+- [ ] It is legible, not mush, at real size on your screen.
+- [ ] Apps and Settings show a phone and two sliders, and both **do** tint with selection.
+
+### Run D — invariant 6 survived a visual pass (the one that matters)
+This is the check a restyle is most likely to have quietly broken.
+- [ ] On the block panel, chooser, and challenge panel: **Exit is the most visually prominent button**
+      — near-white fill. It must NOT have become a faint ghost button.
+- [ ] Exit is still the FIRST control on each panel.
+- [ ] **Back leaves Instagram from all three panels. Exit leaves from all three.**
+- [ ] "5 more minutes" is deliberately the quietest button — but still clearly tappable and never
+      disabled.
+
+### Run E — the bubble did not get more expensive
+```
+adb logcat | Select-String -Pattern "BLASTBufferQueue|ViewRootImpl"
+```
+- [ ] One bubble window construct for the session; no churn while scrolling.
+- [ ] Cross a state threshold mid-scroll: the pill re-tints, no window rebuild.
+- [ ] Scrolling still feels the same — no new stutter from the restyle.
+
+### Not in this step
+- **YouTube is BETA by decision now (D57)**, not pending. It counts, it never blocks. Promotion needs
+  the Shorts capture: 15 swipes → 15 ±2 `identity-counted`, 30s idle → zero, `reel_recycler` markers
+  matching. Runs 1 and 2 of the D34/D35 block below are still the exact procedure.
+- A bundled display font is not shipped; the hero numeral is where one would earn its keep.
+
+---
+
+## forehead hold (D55) — the challenge suite is complete
+
+Challenge 4 of 4. Build is green: **284 unit tests pass**, `assembleDebug` and `compileReleaseKotlin`
+both succeed. `HoldDetector` is reused **unchanged** from face-down, so the timing is already covered
+off-device — these runs are about **the two sensors and the cheat**.
+
+Setup: Settings → daily limit to **20**, then scroll Instagram Reels past it → chooser →
+**Hold the phone to your forehead for 30 seconds**.
+
+### Run A — the chooser is now four deep
+- [ ] Four challenges listed + **Surprise me**: Walk 20, Jump 10, Face down 30s, Forehead 30s.
+- [ ] Exit still **first**, above the options.
+- [ ] Tap Surprise me a few times — it should never hand you the same challenge twice in a row.
+
+### Run B — the hold works
+- [ ] Phone to forehead → ring counts **down** 30s→0, arc fills, completes.
+- [ ] Long buzz on completion, **15 minutes** granted, block comes down.
+- [ ] Take it away at ~15s → resets to **30s** and double-buzzes. Never resumes from 15.
+
+### Run C — the thumb cheat must fail (the load-bearing one)
+- [ ] Lay the phone **flat on a table** and cover the proximity sensor with your thumb. The ring must
+      stay at **30s** and never tick. Proximity alone is not the challenge — it needs the phone
+      **upright** too, or this is a two-second cheat on a thirty-second task.
+- [ ] Hold the phone upright but **uncovered** → also must not count.
+- [ ] Only both together count.
+
+### Run D — OEM pocket mode (may decide whether this challenge is viable here)
+- [ ] Cover the proximity sensor and watch the screen. On stock Android nothing happens —
+      `FLAG_KEEP_SCREEN_ON` holds it. **If your ROM locks the screen when proximity is covered**
+      (some vendors ship a "pocket mode"), say so: we cannot override that, and it means forehead is
+      not viable on this device. It does not block the other three.
+
+### Run E — no leak, both sensors
+```
+adb shell dumpsys sensorservice | Select-String -Pattern -i "scrollkiller|proximity|accelerometer"
+```
+- [ ] After completion / cancel / Exit / Back → **neither** proximity **nor** accelerometer
+      registered to us. Both were registered on one listener, so a half-release would be the bug.
+- [ ] Screen timeout back to normal after each of those paths.
+- [ ] **Back** and **Exit** both leave Instagram from the challenge panel mid-hold.
+
+### Run F — graceful absence
+- [ ] If your device has no proximity sensor (or use the emulator's sensor panel to disable it), the
+      **forehead row must simply be absent** from the chooser — not present and broken.
+
+### Not in this step
+- **fake-scroll feed** is still unbuilt — it is in the roadmap's challenge line but is not a sensor
+  challenge.
+- YouTube is **still `Maturity.BETA`**. Unrelated to this work and now open across several sessions.
+
+---
+
+## face-down hold (D54) — ✅ verified
+
+Challenge 3 of 4. Build is green: **284 unit tests pass**, `assembleDebug` and
+`compileReleaseKotlin` both succeed. `HoldDetector` is fully covered off-device (accumulation,
+break-resets, flip-flop banking nothing, truncation, backwards clock), so these runs are about
+**hardware, the screen, and the buzz** — not the timing logic.
+
+**Before you start: set your screen timeout to 30 seconds.** Run C is specifically about the
+interaction between the hold length and the screen timeout, and a 5-minute timeout hides the bug.
+
+Setup: Settings → daily limit to **20**, then scroll Instagram Reels past it → chooser →
+**Phone face down for 30 seconds**.
+
+### Run A — the hold accumulates and the label counts down
+- [ ] The ring label starts at **30s** and counts **down** — 29s, 28s… — one tick per second, while
+      the arc **fills**. (Flip the phone face down, wait ~5s, flip up quickly to read it: you will
+      have broken the hold, which is Run B, but you can see the label.)
+- [ ] Held continuously for 30s → completes.
+
+### Run B — breaking RESETS, it does not pause (the anti-cheat)
+- [ ] Hold face down ~15s, flip up, flip back down. The ring restarts from **30s**, *not* from 15.
+- [ ] Flip back and forth **five times**, ~5s down each. Total progress must still be **zero** —
+      if any of it banked, the reset is behaving as a pause and the challenge is cheatable.
+- [ ] The prompt on screen says the timer restarts, so this is not a surprise to the user.
+
+### Run C — the screen must NOT sleep mid-hold (the one that would ship broken)
+With the screen timeout at **30 seconds**:
+- [ ] Start the challenge, put the phone face down, and **do not touch it for 30 seconds**.
+- [ ] It **completes**. If it stalls at ~28s and never finishes, `FLAG_KEEP_SCREEN_ON` is not being
+      applied — that is the whole point of this run.
+- [ ] Then cancel a challenge and leave the block on screen: the screen **should** now time out
+      normally. The flag must be scoped to the challenge panel, not the whole block.
+
+### Run D — haptics, felt not seen
+- [ ] Completion at 30s → **one long buzz**. This is what tells you to flip the phone over at all.
+- [ ] Break the hold at ~10s → **two short buzzes**, clearly distinguishable from the long one.
+- [ ] Both are felt through a table/cushion with the screen face down.
+- [ ] Sanity: no buzz repeating every ~200ms while the phone sits face UP on the challenge screen
+      (a hold idling at 0 must not fire the break buzz on every sample).
+
+### Run E — no leak, and invariant 6
+```
+adb shell dumpsys sensorservice | Select-String -Pattern -i "scrollkiller|accelerometer"
+```
+- [ ] After completion / cancel / Exit / Back → accelerometer **not** registered to us.
+- [ ] Screen timeout back to normal after every one of those paths.
+- [ ] **Back** and **Exit** both leave Instagram from the challenge panel mid-hold.
+- [ ] Cancel at 20s, re-enter → restarts at 30s, never resumes.
+- [ ] No `BLASTBufferQueue` construct/destruct pair when the KEEP_SCREEN_ON flag toggles — it is a
+      relayout, not a window rebuild.
+
+### Not in this step
+- **Forehead 30s is not built.** `IMPLEMENTED` still excludes `PROXIMITY_HOLD` and a test asserts
+  the registry has exactly 3 enabled specs, so it cannot appear in the chooser.
+- YouTube is **still `Maturity.BETA`** — unrelated to this work, still unresolved across sessions.
+
+---
+
+## jump challenge + chooser (D53) — ✅ verified
+
+Challenge 2 of 4. Build is green: **266 unit tests pass**, `assembleDebug` and
+`compileReleaseKotlin` both succeed. `JumpDetector` is fully covered off-device (shake rejection,
+landing ringing, refractory, arm expiry, both baseline paths), so these runs are about the
+**hardware and the UI**, not the counting logic.
+
+Setup: Settings → daily limit to **20** (`MIN_DAILY_LIMIT`), then scroll Instagram Reels past it.
+
+### Run A — the chooser offers what this device can actually run
+- [ ] "Earn your way out — 15 minutes" appears on the block panel.
+- [ ] Tapping it opens the chooser with **Walk 20 steps — 15 minutes** and
+      **Jump 10 times — 15 minutes**, plus **Surprise me**.
+- [ ] **Exit is the FIRST control** on the chooser, above the options (invariant 6 traversal).
+- [ ] Now revoke the motion permission (Settings → Apps → ScrollKiller → Permissions → Physical
+      activity → Deny) and re-trigger the block. The chooser must show **Jump only** — no Walk row,
+      and **no "Surprise me"** (it is hidden when there is nothing to be surprised by). This is the
+      per-spec availability change; if Walk still appears, `ChallengeAvailability` is not being
+      consulted. Re-grant afterwards.
+
+### Run B — one jump counts once
+```
+adb logcat -c
+adb logcat -s ScrollKiller > jump.log        # leave running
+```
+Pick **Jump 10 times**, then jump **10** times at a normal pace.
+- [ ] The ring reaches **10/10** in 10 jumps — **not** 5, and **not** 20. A count running ahead
+      means the refractory window is too short for your landing; a count lagging means the
+      free-fall threshold is too tight. Either way, note how many jumps it actually took.
+- [ ] The ring moves **within ~1 second** of the first jump (baselining takes 10 samples, ~200ms at
+      `SENSOR_DELAY_GAME`). A ring that sits at 0 for several seconds means baselining is stalling.
+- [ ] Completion grants **15 minutes**, the block comes down, reels resume.
+
+### Run C — shaking must NOT count (the load-bearing one)
+- [ ] Start Jump, then **shake the phone hard for 15 seconds** without leaving the ground —
+      overhand, underhand, whatever a cheater would try. The ring must stay at **0/10**.
+- [ ] Also try: slapping the phone against your palm, and setting it down hard on a table. Both
+      must score zero.
+
+If any of these count, the free-fall arm is being satisfied by something other than airtime —
+paste the sequence you used, because that gesture names the fix.
+
+### Run D — no sensor leak (the battery complaint nobody traces back to us)
+```
+adb shell dumpsys sensorservice | Select-String -Pattern -i "scrollkiller|accelerometer"
+```
+Check after **each** of these, separately:
+- [ ] Challenge completed → accelerometer **not** registered to us.
+- [ ] Challenge cancelled with Back → not registered.
+- [ ] Exit from the challenge panel → not registered.
+- [ ] Exit from the chooser (nothing was ever started) → not registered.
+- [ ] Turning the screen off with the block up → not registered.
+
+### Run E — invariant 6 from all three panels, and no window churn
+```
+adb logcat | Select-String -Pattern "BLASTBufferQueue|ViewRootImpl"
+```
+- [ ] **Back** leaves Instagram from the block panel, the chooser, AND a running challenge.
+- [ ] **Exit** does the same from all three.
+- [ ] Cancel a challenge at 6/10, re-enter it → progress restarts at **0/10**, never banked.
+- [ ] Across all of the above: the block window is constructed **once**. Panel switches are child
+      toggles, so there must be no construct/destruct pair when moving block → chooser → challenge.
+      A pair there is a D30/D52 regression — stop and report.
+
+### Not in this step
+- **Face-down 30s and forehead 30s are not built.** `ChallengeRegistry.IMPLEMENTED` still excludes
+  `ORIENTATION_HOLD` and a test asserts it, so they cannot appear in the chooser.
+- YouTube is still `Maturity.BETA` in `PlatformSpec` — unrelated to this work, still unresolved.
+
+---
+
+## block stabilisation — churn, runtime revocation, ReVanced (D52)
+
+Your capture's three issues, and **two of them were the same bug**.
+
+`BlockScreenController.view` was doing double duty — the view handle *and* the idempotence guard.
+When `addView` failed it was left null, the guard never armed, and **every count emission inflated
+a fresh `block_root`**. That is the repeated teardown. And it kept failing because of issue 2: this
+ROM refuses `SYSTEM_ALERT_WINDOW` at runtime **while `canDrawOverlays()` still returns true**.
+
+**The reframing:** the authoritative signal is not a permission query, it is whether the window
+actually exists. `show()` now reports its outcome, the attach is verified, a detach we didn't ask
+for is caught, and a 30s cooldown makes repeat triggers free.
+
+### ⚠️ Setup
+- Re-grant "Display over other apps" (you already did) and set the limit to **20**.
+- `adb logcat -s ScrollKiller` — every show and hide now names itself:
+  `block: SHOWN`, `block: ALREADY_SHOWING`, `block: hide (snooze)`, `block: WINDOW LOST`,
+  `block: COOLING_DOWN`.
+
+### Run 1 — no churn while blocked ← **the headline**
+- [ ] Trigger the block, leave it up ~60s, tapping the screen and trying to scroll.
+- [ ] `adb logcat | Select-String "assignParent|block: "` → **one** `block: SHOWN`, then only
+      `ALREADY_SHOWING` (or nothing), and **zero** `assignParent` teardowns until you
+      Exit / snooze / complete a challenge.
+- [ ] Any repeated inflation here means the churn has another source — capture the `block: hide (…)`
+      reason, which now tells us which path fired.
+
+### Run 2 — runtime revocation is caught (the ROM-lies case)
+- [ ] With the block **up**, revoke "Display over other apps" from system Settings.
+- [ ] Come back → logcat shows `block: WINDOW LOST — system detached it`.
+- [ ] The D51 notification fires.
+- [ ] Open ScrollKiller → the banner reads **"Your device is blocking ScrollKiller… even though the
+      permission looks granted"** — *not* "grant the permission". If it says the latter, the
+      observed-denial flag isn't reaching the UI.
+
+### Run 3 — no retry storm after a refusal
+- [ ] Still revoked. Keep scrolling past the limit for ~2 minutes.
+- [ ] logcat shows `block: COOLING_DOWN` far more often than attempts, and **no repeated
+      `block_root` inflation**.
+- [ ] Attempts should be roughly **one every 30s** — not zero (a refusal is not permanent) and not
+      one per reel.
+
+### Run 4 — recovery
+- [ ] Re-grant → within ~30s of the next reel over the limit the block appears.
+- [ ] Banner clears on resume; notification clears.
+
+### Run 5 — ReVanced counts
+- [ ] Scroll Shorts in **ReVanced YouTube** → the count climbs and `DIAG` shows
+      `pkg=app.revanced.android.youtube`.
+- [ ] **If `marker=NO_MATCH`:** expected, and not a bug — YT is ENFORCED so it undercounts rather
+      than counting a feed, and it is BETA so it can't block anyway. The follow-up is the
+      **ReVanced Shorts tour** below. Do not flip anything.
+- [ ] YouTube must still be **BETA** in the Apps tab.
+
+### Run 6 — the 17s stall, re-checked
+- [ ] Watch `LATENCY` lines for a repeat of `layout=17481ms`.
+- [ ] **Gone** → it was the churn, and this closes.
+- [ ] **Recurs** → it is real, independent of churn, and worth its own session. Note the seq and
+      what was on screen.
+
+### Follow-up owed: ReVanced Shorts tour
+Same procedure as the 2026-07-24 tour, on `app.revanced.android.youtube`:
+```
+adb shell am broadcast -p com.scrollkiller -a com.scrollkiller.DIAG_LABEL --es label "RV_SHORTS"
+```
+Confirm the Shorts player still emits `reel_recycler`. If it does, nothing changes. If it doesn't,
+the new id goes in YouTube's `surfaceMarkers` — and either way YT stays BETA until the two
+calibration runs pass.
+
+### Not in this step
+- The three remaining challenges — stabilisation first, as agreed.
+- Promoting YouTube. Untouched.
+
+---
+
+## STILL OUTSTANDING: permission integrity — never fail silently (D51)
 
 **This section is different from every other one in this file: the failure is reproducible on
 demand.** You do not have to wait for it — revoke a permission and it happens.

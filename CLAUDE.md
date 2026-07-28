@@ -21,14 +21,16 @@ Read docs/architecture.mermaid — full component graph. Summary: device is sour
 6. The block screen is ALWAYS exitable. Exit and Back must leave the blocked app from every block state, and dismissal must never depend on the count, a timer, the network, or a challenge succeeding. The overlay tears down when the user leaves the tracked app. A block that cannot be dismissed is a P0 — no product reason outranks this.
 
 ## Docs map (read only what the task needs)
+- **docs/PROJECT_MAP.md — START HERE.** Living Obsidian mind map + project audit. Orient from this first so you do not burn tokens re-reading ROADMAP/DECISIONS wholesale. Drill into linked docs only for the slice you need. Update its short audit bullets when phase/platform/challenge/guilt/HANDOFF headlines change.
 - docs/architecture.mermaid — system graph
 - docs/SCHEMA.md — DB tables + sync flow
-- docs/ROADMAP.md — phases, current status
-- docs/DECISIONS.md — why-log (append-only ADRs)
+- docs/ROADMAP.md — phases, current status (status log is huge — prefer PROJECT_MAP + the CURRENT phase section)
+- docs/DECISIONS.md — why-log (append-only ADRs); open the specific Dn, not the whole file
 - docs/STORE_COPY.md — claims the listing may NOT make, and why (gate before Play submission)
+- HANDOFF.md — current on-device checklist only when verifying or writing device steps
 
 ## Session protocol
-One phase per session. Start: read ROADMAP current phase. End: update ROADMAP status + append any new decision to DECISIONS.md. /clear between phases.
+One phase per session. Start: read **docs/PROJECT_MAP.md**, then ROADMAP current phase only. End: update ROADMAP status + PROJECT_MAP audit bullets + append any new decision to DECISIONS.md. /clear between phases.
 
 ## Conventions
 - Kotlin: package com.scrollkiller.*; ViewModel + Repository; no God-classes in the AccessibilityService — it only emits events.
