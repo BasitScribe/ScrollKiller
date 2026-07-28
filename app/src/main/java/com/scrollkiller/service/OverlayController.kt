@@ -218,8 +218,22 @@ class OverlayController(
             windowManager.addView(view, params)
         } catch (e: Exception) {
             // e.g. permission revoked between the check and the add; fail soft.
+            // This is also an OBSERVATION that overlay windows are being refused, and the honest
+            // one — we asked for a window and did not get it. Recording it here means the Home
+            // banner can report a lying ROM without waiting for someone to hit their daily limit.
             Log.w(TAG, "addView failed; bubble not attached", e)
+            SettingsPrefs.setOverlayRuntimeDenied(context, true)
             return
+        }
+        // SELF-HEAL (D70). An attached bubble is proof that this device will give us an overlay
+        // window right now, which retires any older observation to the contrary. It matters
+        // because the flag is persisted and the thing that sets it is rare: without this, a user
+        // who fixed their permission kept an alarming Home banner until their next block, and
+        // before D70 removed the gate it kept them permanently unblockable. The cheap, frequent
+        // observation corrects the expensive, rare one.
+        if (SettingsPrefs.overlayRuntimeDenied(context)) {
+            SettingsPrefs.setOverlayRuntimeDenied(context, false)
+            Log.d(TAG, "bubble attached; clearing the stale runtime-denied flag")
         }
         bubble = view
         layoutParams = params
@@ -298,6 +312,12 @@ class OverlayController(
             setBubbleShown(it, false)
         }
         hideBlock("left the surface")
+        // The user has left the tracked app, so NOTHING of ours may still be covering the screen.
+        // hideBlock only removes what the controller is tracking; this removes anything it owns
+        // and is not (D71). It is the last line of defence against the trap — a block window that
+        // outlives leaving Instagram also outranks the launcher, which is how someone ends up
+        // unable to reach their own home screen.
+        block.sweepOrphan()
     }
 
     /** Full teardown for service destroy/unbind: stop work and remove the windows. */
@@ -368,29 +388,33 @@ class OverlayController(
                     setExpanded(it, false)
                     setBubbleShown(it, false)
                 }
-                // THE D51 FIX. This used to call block.show() and let it no-op when the overlay
-                // permission was missing — a Log.d and nothing else. That is right for the bubble
-                // (cosmetic, optional since D16) and was catastrophically wrong here: the app
-                // counted to 108, decided to block a hundred times, was refused by AppOps every
-                // time, and told nobody. The block is the product; being unable to draw it is an
-                // INCIDENT, not a shrug.
-                if (!PermissionHealthReader.of(context).canBlock) {
-                    Log.w(
-                        TAG,
-                        "BLOCK PREVENTED at $forLimit/$limit on $platform: overlay permission " +
-                            "missing (AppOps will refuse SYSTEM_ALERT_WINDOW). Warning the user.",
-                    )
-                    notifier.warnBlockPrevented()
-                    return
-                }
+                // NO PRE-CHECK HERE — this is the D70 fix, and the deleted code is worth naming.
+                //
+                // A `PermissionHealthReader.of(context).canBlock` guard used to stand in front of
+                // this and `return` before ever attempting. It was D51's fix (the block must not
+                // fail silently) wearing the wrong shape: it turned a REPORT into a GATE. Because
+                // canBlock ANDed in the persisted overlayRuntimeDenied flag, and because the only
+                // code that cleared that flag was the success branch a few lines below, one
+                // refusal latched blocking off permanently — the clearing code sat behind the gate
+                // the flag had closed. A device with the permission granted logged "BLOCK
+                // PREVENTED ... overlay permission missing" at every limit crossing, forever.
+                //
+                // D52 already knew the answer: only the attempt knows. So the attempt is now
+                // unconditional and the RESULT decides everything — including whether to warn.
+                // Reporting a failure and refusing to try are different things, and only one of
+                // them is allowed to be sticky.
+                //
                 // blockLine draws ONCE per episode and re-renders its tokens on every emission,
                 // so the sentence holds while `{count}` stays live — and an unbroken block does
                 // not eat the tier's 7-day pool one line per emission (D49).
                 //
-                // The RESULT is acted on, not discarded (D52). `canBlock` above can be true and
-                // this still fail: on the ROMs our users run, `canDrawOverlays` returns true while
-                // AppOps refuses the window. Only the attempt itself knows.
-                when (block.show(platform, GuiltLines.blockLine(context, summary.total))) {
+                // The RESULT is acted on, not discarded (D52). On the ROMs our users run,
+                // `canDrawOverlays` returns true while AppOps refuses the window — and, as D70
+                // found, it can also be true while a stale flag of ours claims otherwise. Only the
+                // attempt itself knows.
+                val result = block.show(platform, GuiltLines.blockLine(context, summary.total))
+                Log.d(TAG, "block: attempt at $forLimit/$limit on $platform → $result")
+                when (result) {
                     BlockScreenController.ShowResult.SHOWN,
                     BlockScreenController.ShowResult.ALREADY_SHOWING,
                     -> {
@@ -670,8 +694,13 @@ class OverlayController(
         }
         try {
             context.startActivity(intent)
+            Log.d(TAG, "block: exit → launcher started")
         } catch (e: Exception) {
-            Log.w(TAG, "launcher intent failed", e)
+            // Logged, never rethrown, and deliberately AFTER the dismissal above: on a locked-down
+            // device or under background-activity-start restrictions this can fail, and when it
+            // does the user must be looking at Instagram rather than at an overlay that would not
+            // go away. Exit's promise is "the block is gone", not "you are on your home screen".
+            Log.w(TAG, "block: exit → launcher intent FAILED; block is down regardless", e)
         }
     }
 

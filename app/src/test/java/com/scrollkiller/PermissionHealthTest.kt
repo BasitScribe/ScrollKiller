@@ -41,15 +41,36 @@ class PermissionHealthTest {
     @Test
     fun `the D52 state - the permission LIES and the window is refused - is not fully active`() {
         // The MediaTek/Chinese-ROM case. Every permission query answers yes; the window still
-        // never appears. If canBlock trusted canDrawOverlays here, the Home banner would show
-        // green while the user scrolled past their limit unblocked — which is the D51 failure
-        // wearing a disguise.
+        // never appears. The BANNER must still say so — if the health model trusted
+        // canDrawOverlays here, Home would show green while the user scrolled past their limit
+        // unblocked, which is the D51 failure wearing a disguise.
         val lying = health(runtimeDenied = true)
         assertTrue("Android insists the permission is granted", lying.canDrawOverlays)
         assertTrue("counting is unaffected", lying.canDetect)
-        assertFalse("but the window does not exist, so nothing can block", lying.canBlock)
+        assertTrue("the observation is kept, and it is what the banner reads", lying.blockObservedBroken)
         assertFalse(lying.isFullyActive)
         assertEquals(PermissionGap.OVERLAY_BLOCKED_BY_SYSTEM, lying.firstMissing)
+    }
+
+    @Test
+    fun `D70 - a past refusal must NOT stop the app attempting the block`() {
+        // THE regression. This assertion is the inverse of the one that shipped, and the inversion
+        // is the fix rather than a relaxation of it.
+        //
+        // canBlock gated whether the block was even ATTEMPTED, and ANDed in overlayRuntimeDenied —
+        // a persisted record of a past failure whose only clearing site sat inside the success
+        // branch of the attempt the gate was refusing. One refusal (e.g. hitting the limit while
+        // the permission was legitimately off, which is literally HANDOFF Run 3) latched it true
+        // and blocking was dead forever, through re-grants and reboots alike, because the code
+        // that would have cleared it could no longer run.
+        //
+        // So: with the permission granted, canBlock is TRUE even though we last saw the window
+        // refused. Whether it works THIS time is settled by trying — that was always D52's point.
+        val recovered = health(runtimeDenied = true)
+        assertTrue("a stale observation may never veto the attempt", recovered.canBlock)
+        // ...and the user is still told, because being told and being tried are different things.
+        assertFalse("the banner still reports the problem", recovered.isFullyActive)
+        assertEquals(PermissionGap.OVERLAY_BLOCKED_BY_SYSTEM, recovered.firstMissing)
     }
 
     @Test
@@ -75,12 +96,14 @@ class PermissionHealthTest {
     /* --- the truth table --------------------------------------------------------------- */
 
     @Test
-    fun `canBlock needs accessibility, the permission, AND a window that actually appears`() {
+    fun `canBlock is the QUERYABLE question - accessibility and the permission`() {
         assertTrue(health().canBlock)
-        assertFalse("no overlay window", health(overlay = false).canBlock)
+        assertFalse("no overlay permission", health(overlay = false).canBlock)
         assertFalse("nothing is running", health(accessibility = false).canBlock)
-        assertFalse("the window was refused at runtime", health(runtimeDenied = true).canBlock)
         assertFalse(health(accessibility = false, overlay = false).canBlock)
+        // Deliberately absent: a past refusal. See the D70 test above — it belongs to
+        // blockObservedBroken, which the banner reads and the block path does not.
+        assertTrue(health(runtimeDenied = true).canBlock)
     }
 
     @Test
@@ -168,11 +191,16 @@ class PermissionHealthTest {
                     bools.forEach { denied ->
                         val h = health(a, o, n, denied)
                         val label = "acc=$a overlay=$o notify=$n denied=$denied"
-                        val blockable = a && o && !denied
-                        assertEquals("$label: canBlock", blockable, h.canBlock)
-                        assertEquals("$label: isFullyActive", blockable, h.isFullyActive)
-                        assertEquals("$label: isHealthy", blockable && n, h.isHealthy)
-                        assertEquals("$label: banner shown", !(blockable && n), h.firstMissing != null)
+                        // The two questions D70 split apart. `permitted` is what the system will
+                        // let us try; `working` is what we last saw actually happen. Only the
+                        // second one may darken the banner, and only the first may gate an attempt.
+                        val permitted = a && o
+                        val working = permitted && !denied
+                        assertEquals("$label: canBlock", permitted, h.canBlock)
+                        assertEquals("$label: blockObservedBroken", denied, h.blockObservedBroken)
+                        assertEquals("$label: isFullyActive", working, h.isFullyActive)
+                        assertEquals("$label: isHealthy", working && n, h.isHealthy)
+                        assertEquals("$label: banner shown", !(working && n), h.firstMissing != null)
                         // A healthy app is never degraded, and a degraded one is never healthy.
                         assertFalse("$label: healthy and degraded", h.isHealthy && h.isDegraded)
                     }

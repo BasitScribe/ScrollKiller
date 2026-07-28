@@ -5,7 +5,6 @@ import android.content.res.ColorStateList
 import android.graphics.PixelFormat
 import android.provider.Settings
 import android.util.Log
-import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.WindowManager
@@ -77,7 +76,16 @@ class BlockScreenController(
         /** Already up; the guilt text was refreshed and nothing else happened. */
         ALREADY_SHOWING,
 
-        /** `Settings.canDrawOverlays` says no. Honest, queryable, fixable by the user. */
+        /**
+         * The window did not appear AND `Settings.canDrawOverlays` says no — so the plain,
+         * queryable, user-fixable explanation is the true one. "Grant the permission" is useful
+         * advice here and nowhere else.
+         *
+         * This is a CLASSIFICATION OF AN OBSERVED FAILURE, not a pre-check (D70). The permission
+         * is consulted only after `addView` has already been tried and lost, purely to choose
+         * which sentence the user reads. Nothing in this class asks Android for permission before
+         * attempting — that prediction is what left blocking dead on a device where it was granted.
+         */
         NO_PERMISSION,
 
         /**
@@ -104,6 +112,31 @@ class BlockScreenController(
      * takes the window away, so "is showing" means the window exists rather than "we once tried".
      */
     private var view: View? = null
+
+    /**
+     * EVERY root this controller has handed to [WindowManager.addView] and not yet removed —
+     * whether or not the attempt went on to succeed.
+     *
+     * ## The trap this field exists to make impossible (D71)
+     * [view] is only assigned after a VERIFIED attach, which is right. But the verification path
+     * used to `return FAILED` while the root was still inside the WindowManager, and nothing held
+     * a reference to it any more. The result was a full-screen, OPAQUE, focusable
+     * `TYPE_APPLICATION_OVERLAY` window that:
+     *  - no longer answered [isShowing], so [hide] returned immediately and Exit, "5 more minutes"
+     *    and the challenge button all fired their listeners and did nothing;
+     *  - never reached `requestFocus`, so the old root-focused Back listener never ran either;
+     *  - kept [OverlayController.isBlocking] false, so the service's surface hysteresis expired and
+     *    the block outlived leaving Instagram;
+     *  - outranked the launcher, so the user could not even reach their home screen;
+     *  - and was joined by a SECOND one when the retry cooldown lapsed, so dismissing the tracked
+     *    window merely revealed a dead one underneath.
+     *
+     * That is a P0 against invariant 6, and it was structural: ownership was inferred from success
+     * rather than recorded on the action. So this is set the instant `addView` RETURNS — before any
+     * verification, before any decision — and cleared only by [removeFromWindow], which is the one
+     * place `removeView` is called. If a window exists, this points at it.
+     */
+    private var attachedRoot: View? = null
 
     /** Rate-limits retries after a refusal so a failure can never become a rebuild loop. */
     private val retry = BlockRetryPolicy()
@@ -137,6 +170,10 @@ class BlockScreenController(
         override fun onViewAttachedToWindow(v: View) = Unit
 
         override fun onViewDetachedFromWindow(v: View) {
+            // The window is gone either way, so ownership is released either way — otherwise a
+            // system teardown would leave [attachedRoot] pointing at a dead view and the next
+            // sweep would try to remove it twice.
+            if (attachedRoot === v) attachedRoot = null
             // hide() clears `view` BEFORE removing, so reaching here with it still set means the
             // detach was not ours.
             if (view !== v) return
@@ -170,20 +207,20 @@ class BlockScreenController(
             return ShowResult.COOLING_DOWN
         }
 
-        if (!Settings.canDrawOverlays(context)) {
-            Log.w(TAG, "block: NO_PERMISSION (canDrawOverlays=false); not shown")
-            return ShowResult.NO_PERMISSION
-        }
-
-        val root = LayoutInflater.from(context).inflate(R.layout.overlay_block, null)
+        // NO PERMISSION PRE-CHECK. `Settings.canDrawOverlays` is not consulted before the attempt
+        // and must not be (D70): on the ROMs this app runs on the query lies in BOTH directions,
+        // and a predictive gate here is what left a device with the permission granted refusing to
+        // draw the block at all. The attempt is the only honest question; the query is asked later,
+        // and only to word the failure.
+        val root = LayoutInflater.from(context).inflate(R.layout.overlay_block, null) as BlockRootView
         styleFromBrand(root)   // the layout ships colourless; brand is applied here (D58)
         root.findViewById<TextView>(R.id.block_guilt).text = guiltLine
         val snooze = root.findViewById<Button>(R.id.block_snooze)
         // Formatted from the constant, never written as copy: the sentence the user reads and the
         // reprieve they are granted are then the same number by construction (D49).
         snooze.text = context.getString(R.string.block_snooze, BlockLimits.GRACE_MINUTES)
-        snooze.setOnClickListener { onSnooze() }
-        root.findViewById<Button>(R.id.block_exit).setOnClickListener { onExit() }
+        snooze.setOnClickListener(tapListener("snooze", onSnooze))
+        root.findViewById<Button>(R.id.block_exit).setOnClickListener(tapListener("block.exit", onExit))
 
         // The physical unlock (D50/D53). Shown only when this device can run AT LEAST ONE challenge
         // — a button that cannot do its job has no business on a screen covering another app, and
@@ -201,7 +238,7 @@ class BlockScreenController(
             challenge.text =
                 context.getString(R.string.block_challenge, BlockLimits.CHALLENGE_GRACE_MINUTES)
             challenge.visibility = View.VISIBLE
-            challenge.setOnClickListener { onOpenChooser() }
+            challenge.setOnClickListener(tapListener("challenge.open", onOpenChooser))
         } else {
             challenge.visibility = View.GONE
         }
@@ -209,30 +246,26 @@ class BlockScreenController(
         // Every panel's own way out. Exit is duplicated across all three ON PURPOSE: a chooser or
         // challenge screen offering only "Back" would be a second screen to escape before you can
         // escape, which is exactly what invariant 6 forbids.
-        root.findViewById<Button>(R.id.chooser_exit).setOnClickListener { onExit() }
-        root.findViewById<Button>(R.id.chooser_back).setOnClickListener { onCancelChallenge() }
-        root.findViewById<Button>(R.id.challenge_exit).setOnClickListener { onExit() }
-        root.findViewById<Button>(R.id.challenge_cancel).setOnClickListener { onCancelChallenge() }
+        root.findViewById<Button>(R.id.chooser_exit).setOnClickListener(tapListener("chooser.exit", onExit))
+        root.findViewById<Button>(R.id.chooser_back)
+            .setOnClickListener(tapListener("chooser.back", onCancelChallenge))
+        root.findViewById<Button>(R.id.challenge_exit)
+            .setOnClickListener(tapListener("challenge.exit", onExit))
+        root.findViewById<Button>(R.id.challenge_cancel)
+            .setOnClickListener(tapListener("challenge.cancel", onCancelChallenge))
 
-        // Intercept Back so it can't dismiss the block to reveal Instagram — Back = Exit.
-        //
-        // The listener stays on the ROOT and the root keeps focus (see requestFocus below): a
-        // ViewGroup's OnKeyListener only runs when the ViewGroup ITSELF is the focused view, so
-        // moving focus onto one of the buttons would silently stop Back being handled at all —
-        // and an unhandled Back on a WindowManager-added view does nothing, which is the trap
-        // invariant 6 forbids. TalkBack order is solved in the LAYOUT instead (Exit comes first).
-        //
-        // DOWN is consumed as well as UP so the framework never gets a half-handled Back; the
-        // action fires on UP, which is where a press is committed.
+        // Back = Exit, and it can't dismiss the block to reveal Instagram. Handled by
+        // [BlockRootView.dispatchKeyEvent] rather than an OnKeyListener, so it works regardless of
+        // which view holds focus — see that class for why the focus-dependent version was a trap.
+        // Wired BEFORE addView: no window this class creates is ever on screen with Back unwired.
+        root.onBack = { logTap("back") { onExit() } }
         root.isFocusableInTouchMode = true
-        root.setOnKeyListener { _, keyCode, event ->
-            if (keyCode != KeyEvent.KEYCODE_BACK) {
-                false
-            } else {
-                if (event.action == KeyEvent.ACTION_UP) onExit()
-                true
-            }
-        }
+
+        // Start on the block panel explicitly rather than inheriting it from the XML's initial
+        // visibilities. "Exactly one panel is visible" is the invariant; asserting it in the one
+        // place that also enforces it later means the starting state cannot drift out of the
+        // layout file unnoticed.
+        showPanel(root, R.id.block_panel)
 
         // Watch for the system taking the window away. Added BEFORE addView so a refusal that
         // detaches immediately is still heard.
@@ -240,24 +273,37 @@ class BlockScreenController(
 
         val params = createLayoutParams()
         try {
+            // DEBUG-only injection point, compiled out of release builds (D71). See
+            // [BlockFailureInjector] for why the trap needs to be reproducible on demand.
+            if (BlockFailureInjector.shouldThrow()) {
+                throw WindowManager.BadTokenException("forced addView failure (DEBUG injector)")
+            }
             windowManager.addView(root, params)
+            // OWNERSHIP IS RECORDED HERE — the statement after `addView` returns, before anything
+            // is verified or decided. Every path below this line is responsible for either keeping
+            // the window or removing it, and none of them may simply return (D71).
+            attachedRoot = root
         } catch (e: Exception) {
-            // The honest failure: the permission query said yes and the window manager said no.
+            // The honest failure: the window manager said no.
             // Record it so the next emissions are suppressed rather than inflating again — this
-            // return path is exactly where the churn came from (D52).
+            // return path is exactly where the churn came from (D52). Nothing was added, so there
+            // is nothing to remove.
             root.removeOnAttachStateChangeListener(attachWatcher)
             retry.recordFailure(now)
-            Log.w(TAG, "block: FAILED — addView refused (canDrawOverlays said true). Cooling down.", e)
-            return ShowResult.FAILED
+            Log.w(TAG, "block: addView refused. Cooling down.", e)
+            return classifyFailure("addView threw")
         }
 
         // VERIFY, do not assume. `addView` returning without throwing is not proof the window
         // exists on a ROM that refuses the op at composition time; `isAttachedToWindow` is.
-        if (!root.isAttachedToWindow) {
-            root.removeOnAttachStateChangeListener(attachWatcher)
+        if (!root.isAttachedToWindow || BlockFailureInjector.shouldFakeNoAttach()) {
+            // THE path that produced the trap. The view IS in the WindowManager at this point, so
+            // it must come out before we return — a full-screen opaque overlay that nothing holds a
+            // reference to cannot be dismissed by any button, by Back, or by leaving the app.
+            removeFromWindow(root, "attach never landed")
             retry.recordFailure(now)
-            Log.w(TAG, "block: FAILED — addView returned but the view never attached. Cooling down.")
-            return ShowResult.FAILED
+            Log.w(TAG, "block: addView returned but the view never attached; window removed. Cooling down.")
+            return classifyFailure("no attach")
         }
 
         root.requestFocus()
@@ -265,9 +311,33 @@ class BlockScreenController(
         layoutParams = params
         keepingScreenOn = false   // matches the freshly created params; no KEEP_SCREEN_ON yet
         retry.recordSuccess()
-        Log.d(TAG, "block: SHOWN on $platform")
+        Log.d(
+            TAG,
+            "block: SHOWN on $platform (attached=${root.isAttachedToWindow} " +
+                "focused=${root.isFocused} injector=${BlockFailureInjector.describe()})",
+        )
         return ShowResult.SHOWN
     }
+
+    /**
+     * Word an ALREADY-OBSERVED failure for the user.
+     *
+     * The permission query is asked HERE and only here — after the attempt has been made and lost —
+     * because the two failures need completely different advice: [ShowResult.NO_PERMISSION] means
+     * "grant it and this works", [ShowResult.FAILED] means "your settings already say granted and
+     * the system is refusing anyway". Getting that backwards sends someone to a settings screen
+     * whose switch is already on.
+     *
+     * What it must never be is a gate. See [ShowResult.NO_PERMISSION] and D70.
+     */
+    private fun classifyFailure(stage: String): ShowResult =
+        if (!Settings.canDrawOverlays(context)) {
+            Log.w(TAG, "block: NO_PERMISSION — $stage, and canDrawOverlays=false. Honest gap.")
+            ShowResult.NO_PERMISSION
+        } else {
+            Log.w(TAG, "block: FAILED — $stage while canDrawOverlays=true. The ROM is refusing.")
+            ShowResult.FAILED
+        }
 
     /**
      * Swap the window's content to the CHOOSER, listing every challenge this device can run plus
@@ -294,11 +364,14 @@ class BlockScreenController(
         specs.forEach { spec ->
             options.addView(
                 optionButton(
-                    context.getString(
+                    label = context.getString(
                         R.string.challenge_option,
                         context.getString(spec.promptRes, spec.target),
                         BlockLimits.CHALLENGE_GRACE_MINUTES,
                     ),
+                    // The spec id, not the label: the log stays greppable and stable when the copy
+                    // changes or the pack is translated.
+                    name = "chooser.option[${spec.id}]",
                 ) { onChooseChallenge(spec) },
             )
         }
@@ -306,9 +379,10 @@ class BlockScreenController(
         // available challenge makes it a second button that does the same thing as the first.
         if (specs.size > 1) {
             options.addView(
-                optionButton(context.getString(R.string.challenge_surprise)) {
-                    onChooseChallenge(null)
-                },
+                optionButton(
+                    label = context.getString(R.string.challenge_surprise),
+                    name = "chooser.option[surprise]",
+                ) { onChooseChallenge(null) },
             )
         }
 
@@ -402,7 +476,7 @@ class BlockScreenController(
     }
 
     /** A chooser row, styled as a secondary action like the other cobalt buttons. */
-    private fun optionButton(label: String, onClick: () -> Unit): Button =
+    private fun optionButton(label: String, name: String, onClick: () -> Unit): Button =
         Button(context).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -410,8 +484,73 @@ class BlockScreenController(
             ).apply { topMargin = (OPTION_GAP_DP * context.resources.displayMetrics.density).toInt() }
             text = label
             styleSecondary(this)
-            setOnClickListener { onClick() }
+            setOnClickListener(tapListener(name, onClick))
         }
+
+    /**
+     * Every control on this window goes through here, and that is a debugging requirement rather
+     * than tidiness (D71).
+     *
+     * When the block trapped a user, the single most expensive unknown was whether their taps were
+     * REACHING the buttons at all. "Exit does nothing" has two completely different causes — the
+     * touch never arrived (wrong window flags, a view on top, an unowned window nobody is
+     * listening to) or the handler ran and its work was a no-op — and they need opposite fixes.
+     * Without a log at the listener there is no way to tell them apart from the outside, and the
+     * device is the only place the bug reproduces.
+     *
+     * So each tap prints TWICE: once on entry, and once after the handler with the state that
+     * decides whether it actually did anything. A tap that never registered prints nothing; a tap
+     * that fired but failed prints a pair whose second line still says `showing=true`.
+     */
+    private fun tapListener(name: String, onClick: () -> Unit) =
+        View.OnClickListener { logTap(name, onClick) }
+
+    /** [tapListener]'s body, also used for the hardware Back key (which has no OnClickListener). */
+    private fun logTap(name: String, action: () -> Unit) {
+        Log.d(TAG, "block: TAP $name (showing=$isShowing)")
+        try {
+            action()
+        } catch (e: Exception) {
+            // A throwing handler must never be the reason a block stays up. Report it and let the
+            // other exits — Back, the other panels' Exit, leaving the app — still work.
+            Log.e(TAG, "block: TAP $name → THREW; the window may still be up", e)
+            return
+        }
+        Log.d(TAG, "block: TAP $name → done (showing=$isShowing, window=${attachedRoot != null})")
+    }
+
+    /**
+     * The ONE place `removeView` is called, so ownership can only be released by an actual removal.
+     *
+     * Idempotent by construction: clearing [attachedRoot] first means a second call for the same
+     * view is a no-op on the field, and `removeView` on an already-removed view only logs.
+     */
+    private fun removeFromWindow(v: View, reason: String) {
+        if (attachedRoot === v) attachedRoot = null
+        v.removeOnAttachStateChangeListener(attachWatcher)
+        try {
+            windowManager.removeView(v)
+        } catch (e: Exception) {
+            Log.w(TAG, "block: removeView failed ($reason)", e)
+        }
+    }
+
+    /**
+     * Remove any block window this controller owns but is no longer tracking.
+     *
+     * The belt to [removeFromWindow]'s braces. Every failure path now cleans up after itself, so in
+     * a correct build this finds nothing — which is exactly why it is called from the paths that
+     * run when the user leaves the tracked app ([OverlayController.offSurface]) and when the
+     * service dies. If a future edit ever reintroduces an early return that skips the removal, the
+     * window dies on leaving Instagram instead of covering the launcher indefinitely, and this logs
+     * loudly enough to find it.
+     */
+    fun sweepOrphan() {
+        val orphan = attachedRoot ?: return
+        if (orphan === view) return   // tracked and healthy; not an orphan
+        Log.w(TAG, "block: SWEEP — an unowned block window existed; removing it")
+        removeFromWindow(orphan, "orphan sweep")
+    }
 
     /**
      * Paint the block window from [Brand] (D58).
@@ -487,25 +626,36 @@ class BlockScreenController(
      *   capture states which path is tearing the block down instead of us guessing.
      */
     fun hide(reason: String = "unspecified") {
-        val v = view ?: return
-        // Cleared and the watcher detached BEFORE removeView: the detach callback is about to
-        // fire, and it must not be mistaken for the system taking the window away from us.
+        val tracked = view
+        val owned = attachedRoot
+        if (tracked == null && owned == null) return
+
+        // Cleared BEFORE removeView: the detach callback is about to fire, and it must not be
+        // mistaken for the system taking the window away from us.
         view = null
         layoutParams = null
         // The window is going; whatever it was holding awake goes with it. Reset the flag so the
         // NEXT block starts from a known state rather than believing it is still holding the screen.
         keepingScreenOn = false
-        v.removeOnAttachStateChangeListener(attachWatcher)
-        try {
-            windowManager.removeView(v)
-        } catch (e: Exception) {
-            Log.w(TAG, "removeView failed", e)
+
+        tracked?.let { removeFromWindow(it, reason) }
+        // UNCONDITIONAL, and not guarded on `view` being set (D71). hide() used to open with
+        // `val v = view ?: return`, which meant that once a window went untracked every dismissal
+        // path — Exit, Back, snooze, challenge completion, leaving the app — silently did nothing
+        // while the window stayed on screen. A teardown must be able to tear down whatever exists,
+        // not only what it expected to exist.
+        if (owned != null && owned !== tracked) {
+            Log.w(TAG, "block: hide found an untracked window; removing it too")
+            removeFromWindow(owned, "$reason (untracked)")
         }
         Log.d(TAG, "block: hide ($reason)")
     }
 
-    /** Teardown for service destroy/unbind. */
-    fun destroy() = hide("service destroy")
+    /** Teardown for service destroy/unbind. Sweeps first: nothing may outlive the service. */
+    fun destroy() {
+        sweepOrphan()
+        hide("service destroy")
+    }
 
     private fun createLayoutParams(): WindowManager.LayoutParams {
         @Suppress("DEPRECATION") // min-SDK 26, so the overlay type is correct.

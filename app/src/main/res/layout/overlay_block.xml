@@ -21,17 +21,42 @@
     challenge or chooser screen offering only "Back" would be a second screen the user has to
     escape before they can escape, which is precisely what invariant 6 forbids. Adding the
     chooser added a panel to escape from, which is exactly why it got its own Exit too.
+
+    TWO STRUCTURAL WRAPPERS, both invariant 6 (D71):
+
+    1. The root is BlockRootView, not a plain layout. It overrides dispatchKeyEvent so hardware
+       BACK escapes regardless of which view holds focus — the previous OnKeyListener only ran
+       while the root itself was focused, which made the way out conditional on a focus state
+       nothing enforced. Do not change this back to a bare LinearLayout/FrameLayout.
+
+    2. The panel stack sits in a ScrollView (fillViewport=true). Every panel is wrap_content
+       inside a centred stack, so at a large system font scale, on a short screen, or with a long
+       guilt line, the content overflows and Exit is simply laid out past the bottom of the
+       display with no way to reach it. fillViewport keeps the centring when the content is short
+       and allows scrolling when it is not. An Exit that exists but cannot be touched is a trap.
 -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<com.scrollkiller.service.BlockRootView
+    xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/block_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:gravity="center"
-    android:padding="32dp"
     android:focusable="true"
     android:focusableInTouchMode="true">
+
+<ScrollView
+    android:id="@+id/block_scroll"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+<LinearLayout
+    android:id="@+id/block_content"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="32dp">
 
     <!-- ===================== THE BLOCK ===================== -->
     <LinearLayout
@@ -81,8 +106,9 @@
             either way to keep scrolling, so a screen-reader user is never hunting for the exit on
             an overlay covering someone else's app (CLAUDE.md invariant 6).
 
-            No button takes focus in touch mode — the ROOT keeps it, because that is the only
-            way its Back-key listener runs (see BlockScreenController).
+            Focus is no longer load-bearing here (D71). Back is handled by BlockRootView's
+            dispatchKeyEvent, which runs whatever holds focus — so a Button taking focus via
+            TalkBack or a keyboard can no longer silently disable the way out.
         -->
         <Button
             android:id="@+id/block_exit"
@@ -244,3 +270,7 @@
     </LinearLayout>
 
 </LinearLayout>
+
+</ScrollView>
+
+</com.scrollkiller.service.BlockRootView>

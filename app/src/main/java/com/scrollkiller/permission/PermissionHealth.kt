@@ -56,16 +56,39 @@ data class PermissionHealth(
     val canDetect: Boolean get() = accessibilityEnabled
 
     /**
-     * The block can actually appear. All three conditions are required and that is the whole
+     * The system says we MAY draw the block. Both conditions are required and that is the whole
      * point: the D51 failure had `canDetect` true and this false, which is precisely the state
      * that used to produce no signal at all.
      *
-     * [overlayRuntimeDenied] is the D52 addition and it OVERRIDES a granted-looking permission.
-     * "Android says we may draw overlays" and "our overlay window exists" turned out to be
-     * different facts, and only the second one blocks anyone.
+     * ## Why [overlayRuntimeDenied] is deliberately NOT part of this (D70)
+     * It used to be, and that turned a diagnosis into a permanent sentence. The flag is a
+     * PERSISTED observation of a past failure; this property gated whether the block was even
+     * attempted; and the only code that cleared the flag lived *behind* that gate, inside the
+     * success branch of the attempt. So one refusal — including the perfectly ordinary one you get
+     * by hitting your limit while the permission is genuinely off — latched the flag true, the
+     * gate then refused every future attempt, and the clearing code became unreachable. Granting
+     * the permission did not help. Nothing did, short of clearing app data.
+     *
+     * A prediction must never stand in front of the attempt: D52's own finding was that on these
+     * ROMs only the attempt knows. So this answers the queryable question and nothing more, and
+     * whether the window ACTUALLY appears is settled by trying — see
+     * [com.scrollkiller.service.BlockScreenController.show].
+     *
+     * The observation is not discarded; it moved to [blockObservedBroken], which drives what the
+     * user is TOLD and never what the app attempts.
      */
     val canBlock: Boolean
-        get() = accessibilityEnabled && canDrawOverlays && !overlayRuntimeDenied
+        get() = accessibilityEnabled && canDrawOverlays
+
+    /**
+     * We have OBSERVED the system refuse or destroy our overlay window, whatever the permission
+     * query claims (D52).
+     *
+     * Health/banner layer ONLY. Read this to decide what to show a user; never to decide whether
+     * to try. It is stale by construction — it describes the last attempt, not this one — which is
+     * exactly why gating on it produced the D70 deadlock.
+     */
+    val blockObservedBroken: Boolean get() = overlayRuntimeDenied
 
     /** We can tell the user about a problem while they are outside the app. */
     val canWarnOutOfApp: Boolean get() = canNotify
@@ -76,8 +99,13 @@ data class PermissionHealth(
      * Deliberately ignores [canNotify]: notifications are how we report a failure, not part of the
      * job itself, and an app that called itself "not fully active" for a missing alert channel
      * would be crying wolf about the one banner that must always be believed.
+     *
+     * Unlike [canBlock] this DOES fold in [blockObservedBroken] — and that split is the point of
+     * D70. "Should we try?" and "should we reassure the user?" are different questions: a stale
+     * observation is a perfectly good reason to keep a warning on screen, and never a reason to
+     * stop attempting. The banner behaviour here is unchanged from D52.
      */
-    val isFullyActive: Boolean get() = canDetect && canBlock
+    val isFullyActive: Boolean get() = canDetect && canBlock && !blockObservedBroken
 
     /**
      * True when the app works but cannot warn you about it going wrong. The banner says so in a

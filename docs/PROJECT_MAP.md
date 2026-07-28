@@ -2,7 +2,7 @@
 
 > **Single entry point.** Living audit + index of every doc in the project. Pointers only — never a
 > dump of ROADMAP/DECISIONS.
-> Last audited: **2026-07-28** (Phase 2 · challenge suite COMPLETE 4/4 · brand pass done D58 · YouTube v1-decided BETA D57 · device sweep pending).
+> Last audited: **2026-07-28** (Phase 2 · challenge suite COMPLETE 4/4 · brand pass done D58 · YouTube v1-decided BETA D57 · **D70/D71 block fixes in tree, device verification PENDING and blocking — invariant 6 is not closed**).
 
 ## Read order for a new session
 
@@ -126,6 +126,11 @@ mindmap
 #### Roadmap status (audit 2026-07-28)
 - **Phase 1 ✅** Detection MVP — IG calibrated 49/50 (D11); ±2/50 exit still open as formal checkbox
 - **Phase 2 ← CURRENT** Block live on IG (D49 verified); challenges **all four device-verified** (D50/D53/D54/D55); chooser + "Surprise me" (D53); brand pass (D58); guilt engine; permission integrity (D51); block retry/ReVanced (D52 verified)
+- 🔴 **D70/D71 — two block defects found on device, fixed in tree, NOT yet device-verified.** D71 was a
+  **P0 against invariant 6**: an untracked full-screen overlay that Exit, Back and leaving the app all
+  failed to dismiss, covering the launcher. D70 was the block refusing to draw on a device where the
+  permission was granted, via a self-latching persisted flag. Both are code+tests+docs complete; the
+  HANDOFF CURRENT block (Runs 1–4, including the forced-failure escape) is the gate
 - **Open P2 work**
   - Expand guilt pack T3→40, T4→150 (content; ~18 each now)
   - Challenges: **suite COMPLETE 4/4, all device-verified**; only fake-scroll feed remains, and it is not a sensor challenge
@@ -176,8 +181,17 @@ mindmap
 
 #### BlockScreenController
 - Full-screen `TYPE_APPLICATION_OVERLAY` at user limit
-- Outcomes: `SHOWN / ALREADY_SHOWING / NO_PERMISSION / FAILED / COOLING_DOWN` (D52)
+- Outcomes: `SHOWN / ALREADY_SHOWING / NO_PERMISSION / FAILED / COOLING_DOWN` (D52). **No permission
+  pre-check** — attempt first, classify the failure after (D70)
 - Attach verified; detach listener; hide reasons logged
+- **`attachedRoot` = ownership, recorded when `addView` RETURNS, not when it succeeds (D71).** The
+  `!isAttachedToWindow` path used to return with the window still in the WindowManager and nothing
+  referencing it — a full-screen opaque overlay no button, no Back and no app-switch could dismiss,
+  outranking the launcher. `hide()` is unconditional; `sweepOrphan()` on `offSurface`/destroy
+- **Back is `BlockRootView.dispatchKeyEvent`, not an OnKeyListener** — focus-independent (D71)
+- Panels live in a `ScrollView fillViewport` so Exit is reachable at any font scale
+- Every button / chooser row / Back logs a **pair**: `TAP <n>` then `TAP <n> → <outcome>`
+- `BlockFailureInjector` — DEBUG-only, `adb ... -a com.scrollkiller.BLOCK_FAIL --es mode no_attach|throw|off`
 - Always: **Exit**, **Back**, **"5 more minutes"** (`BlockLimits.GRACE_MINUTES=5`), challenge path
 - **THREE panels, one window** (D50/D53): `block_panel` / `chooser_panel` / `challenge_panel`; child swaps via one `showPanel` helper so "exactly one visible" cannot be broken piecemeal. Root never GONE (D30). **Each panel carries its own Exit, listed first** for TalkBack traversal — invariant 6
 
@@ -185,11 +199,16 @@ mindmap
 - Default 100; slider 20–300 step 10; grace 5 min; challenge grace **15** min (must be > free tap)
 - Retry cooldown 30s (`BlockRetryPolicy`)
 
-#### PermissionHealth (D51/D52)
+#### PermissionHealth (D51/D52, corrected by D70)
 - Gaps (worst first): ACCESSIBILITY → OVERLAY → **OVERLAY_BLOCKED_BY_SYSTEM** → NOTIFICATIONS
 - `canDetect` vs `canBlock` — silent half-dead is forbidden
 - Home banner (guaranteed) + notification (best-effort) + logcat
 - `overlayRuntimeDenied` = observed window failure (ROM lies on `canDrawOverlays`)
+- ⚠️ **`canBlock` = `accessibilityEnabled && canDrawOverlays` ONLY.** It answers what is *queryable*
+  and must never gate on the observed flag: doing so latched blocking off permanently, because the
+  flag's only clearing site sat behind the gate it closed (D70). The observation lives in
+  **`blockObservedBroken`** — banner/`firstMissing` only, never a gate. **A stale signal may darken
+  a banner and may never veto an attempt.** Self-heals when the bubble attaches
 
 ---
 
@@ -301,6 +320,12 @@ Pure JVM coverage for: detectors, registry, BlockPolicy/Limits/Retry, Permission
 ---
 
 ### Current HANDOFF focus (see HANDOFF.md)
+**D70/D71 — the block screen (CURRENT, blocking):** block draws with the permission granted and the
+stale flag self-clears · `BLOCK PREVENTED` must NOT appear · **every way out works and logs a pair** —
+Exit, "5 more minutes", chooser, hardware BACK from all three panels · forced-failure
+(`--es mode no_attach`) leaves **no window on screen and no stacking** · Exit reachable at max font
+size. Invariant 6 stays open until all four runs pass.
+
 **D58 — brand pass (CURRENT):** no purple, palette must NOT move when the wallpaper changes · light+dark sweep · hero card tint shifts at 50/150 · mascot head in FULL COLOUR in the nav bar · **Exit still the most prominent button on all three panels** · no new bubble churn.
 **D55 — forehead hold:** chooser is 4 deep + Surprise me · ring counts down, resets on break · **thumb-on-a-table must NOT count** (needs upright too) · **OEM pocket mode** — report if covering proximity locks your screen · neither proximity nor accel left registered · absent row on a device with no proximity sensor.
 **D54 — face-down (✅ verified) · D53 — jump + chooser (✅ verified).**

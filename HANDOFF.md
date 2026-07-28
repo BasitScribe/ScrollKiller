@@ -7,6 +7,69 @@
 > for f in CLAUDE.md HANDOFF.md docs/*.md ScrollKiller/*.md; do echo "$(grep -c '^```' "$f") $f"; done
 > ```
 
+## ← CURRENT: D70/D71 — the block draws again, and cannot trap you
+
+**This outranks everything below it, including the CI run.** Invariant 6 failed on a real device:
+the block covered the screen, Exit and both other buttons did nothing, Back did nothing, and the
+launcher could not be reached. Nothing ships until these pass.
+
+Run with logcat open the whole time — the tap logging is half the fix:
+```
+adb logcat -c && adb logcat -s ScrollKiller
+```
+
+### Run 1 — BUG 1: the block draws with the permission granted (D70)
+The device is expected to be carrying a latched `overlay_runtime_denied` from an earlier session, so
+this is a recovery test, not just a happy path. **Do not clear app data first** — that would erase
+the very state being fixed.
+- [ ] Confirm "Display over other apps" is **ON** for ScrollKiller in system settings.
+- [ ] Open IG Reels and scroll once. Logcat: `bubble attached; clearing the stale runtime-denied flag`.
+      That line is the self-heal firing; it should appear **once**, then never again.
+- [ ] Home screen banner is **gone** on the next app open.
+- [ ] Scroll past the limit → **the block appears.**
+- [ ] `BLOCK PREVENTED ... overlay permission missing` must **NOT** appear. Neither must
+      `entered INSTAGRAM with the block dead`. Those two lines are the bug; either one is a fail.
+- [ ] Logcat shows `block: attempt at N/limit on INSTAGRAM → SHOWN`.
+
+### Run 2 — BUG 2: every way out works, and each one logs (D71)
+Trigger a real block for each. Every tap must produce a **pair** of lines — the second one is what
+distinguishes "fired but did nothing" from "never registered".
+- [ ] **Exit** → `block: TAP block.exit (showing=true)` then
+      `block: TAP block.exit → done (showing=false, window=false)`, then
+      `block: exit → launcher started`. **You land on the home screen.**
+- [ ] **5 more minutes** → `TAP snooze` pair, block goes, scrolling resumes for 5 min.
+- [ ] **Earn your way out** → `TAP challenge.open` pair; chooser appears; each row logs
+      `TAP chooser.option[walk_20]` etc.; `TAP chooser.exit` and `TAP chooser.back` both work.
+- [ ] **Hardware BACK** → `block: TAP back(hardware) wired=true` then `→ dispatched`, then the
+      `TAP back` pair. Block tears down, same as Exit.
+- [ ] **BACK from the chooser panel and from a running challenge** — not just the block panel. This
+      is the case the old focus-dependent listener would have broken.
+- [ ] Leave Instagram with a block up (swipe home) → block disappears. No `SWEEP` line, because
+      nothing should be orphaned.
+
+### Run 3 — the trap itself, forced (the reason the injector ships)
+This is the reproduction that was impossible before. DEBUG build only.
+```
+adb shell am broadcast -p com.scrollkiller -a com.scrollkiller.BLOCK_FAIL --es mode no_attach
+```
+- [ ] Logcat: `block: FAILURE INJECTOR armed=NO_ATTACH (DEBUG only)`.
+- [ ] Scroll past the limit. Logcat:
+      `block: addView returned but the view never attached; window removed. Cooling down.`
+      then `block: FAILED — no attach while canDrawOverlays=true. The ROM is refusing.`
+- [ ] **THE POINT: no window is left on screen.** Instagram is still usable, the launcher is
+      reachable, and there is no black rectangle. Before the fix this is exactly where the trap was.
+- [ ] Wait 30s (the retry cooldown), scroll again → the attempt repeats and still leaves nothing
+      behind. **No stacking.** Two overlapping dead windows was the "Exit did nothing" second cause.
+- [ ] Now `--es mode throw` → `addView refused`, same outcome, nothing on screen.
+- [ ] `--es mode off` → the next block draws normally and Exit works. **Do not leave it armed.**
+
+### Run 4 — Exit is reachable at any size
+- [ ] System font size / display size to **maximum**, trigger a block.
+- [ ] The panel **scrolls** and Exit is reachable. It must not be laid out past the bottom edge.
+- [ ] Repeat on the challenge panel (the 180dp ring is the tallest content).
+
+---
+
 ## ← CURRENT: the first CI run (3a)
 
 **Not on-device.** This is the first verification in this project that runs on a machine other than

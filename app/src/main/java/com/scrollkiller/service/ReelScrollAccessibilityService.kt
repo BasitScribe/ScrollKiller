@@ -51,6 +51,13 @@ class ReelScrollAccessibilityService : AccessibilityService() {
      */
     private val labelReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
+            // The block-failure injector shares this receiver rather than adding a second one:
+            // both are DEBUG-only adb-driven test aids with the same lifetime, and one receiver
+            // means one thing to register, unregister and reason about (D71).
+            if (intent?.action == ACTION_BLOCK_FAIL) {
+                BlockFailureInjector.arm(intent.getStringExtra(EXTRA_MODE))
+                return
+            }
             val root = rootInActiveWindow
             val spec = PlatformRegistry.forPackage(root?.packageName)
             val label = intent?.getStringExtra(EXTRA_LABEL)
@@ -543,7 +550,7 @@ class ReelScrollAccessibilityService : AccessibilityService() {
         ContextCompat.registerReceiver(
             this,
             labelReceiver,
-            IntentFilter(ACTION_DIAG_LABEL),
+            IntentFilter(ACTION_DIAG_LABEL).apply { addAction(ACTION_BLOCK_FAIL) },
             ContextCompat.RECEIVER_EXPORTED,
         )
         labelReceiverRegistered = true
@@ -564,6 +571,16 @@ class ReelScrollAccessibilityService : AccessibilityService() {
 
         /** String extra on [ACTION_DIAG_LABEL] carrying the human label for the log banner. */
         const val EXTRA_LABEL = "label"
+
+        /**
+         * Broadcast action that arms the DEBUG block-failure injector (D71), so the trap the
+         * always-exitable invariant exists to prevent can be reproduced deliberately instead of
+         * waited for. See [BlockFailureInjector] for the modes and the adb one-liners.
+         */
+        const val ACTION_BLOCK_FAIL = "com.scrollkiller.BLOCK_FAIL"
+
+        /** String extra on [ACTION_BLOCK_FAIL]: `no_attach`, `throw`, or `off`. */
+        const val EXTRA_MODE = "mode"
 
         /** Label prefix that starts a [YtProbe] capture (zeroes counters, prints the table). */
         const val YTPROBE_LABEL_PREFIX = "YTPROBE"
