@@ -58,6 +58,19 @@ object BlockLimits {
     const val CHALLENGE_GRACE_MS = CHALLENGE_GRACE_MINUTES * 60_000L
 
     /**
+     * How long to wait before trying to draw the block again after its window failed to appear
+     * (D52). See [BlockRetryPolicy].
+     *
+     * Thirty seconds is chosen against the two failure modes it sits between. Shorter and a ROM
+     * that refuses `SYSTEM_ALERT_WINDOW` at runtime puts us back into the retry storm this
+     * constant exists to end — the block re-inflating a full-screen layout on every reel. Longer
+     * and a user who fixes the permission stands in Instagram waiting for the app to notice.
+     * At thirty seconds a denial costs one attempt every half-minute, which is invisible, and a
+     * recovery is picked up well within the time it takes to switch back to the app.
+     */
+    const val BLOCK_RETRY_COOLDOWN_MS = 30_000L
+
+    /**
      * The nearest legal limit to [value]: snapped to [LIMIT_STEP] and held inside
      * [MIN_DAILY_LIMIT]..[MAX_DAILY_LIMIT].
      *

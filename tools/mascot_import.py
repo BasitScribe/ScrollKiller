@@ -99,9 +99,28 @@ DENSITIES = {
 # `base_dp` is the LONGER side of the output (the crop is not square — see the
 # module doc). GUARDIAN is intentionally absent from the bubble family: the bubble
 # has no blocked state, so generating it would ship a drawable nothing references.
+#
+# `sub` (optional) is a further relative crop applied AFTER the shared union trim,
+# for a family that needs part of the character rather than all of it. See `head`.
 FAMILIES = {
     "hero": {"base_dp": 120, "states": list(STATES)},
     "bubble": {"base_dp": 40, "states": ["healthy", "cracking", "fried"]},
+    # The nav-bar glyph (D58). A 24dp full-body mascot is unreadable mush — which is
+    # precisely why a 🧠 emoji placeholder survived in the bottom nav for so long — so
+    # this family crops to cap + face + hands.
+    #
+    # The box was MEASURED, not guessed: candidates were rendered at true 24dp and
+    # compared, and this one lands at aspect 1.03, so it fills a square nav slot
+    # instead of sitting in it as a short wide sliver. Cropping tighter (to the face
+    # alone) loses the cap, which is most of the character's silhouette at this size.
+    #
+    # healthy only: a nav icon is NAVIGATION, not state. Swapping the tab glyph as the
+    # count climbed would make the bottom bar flicker between arts and read as a bug.
+    "head": {
+        "base_dp": 24,
+        "states": ["healthy"],
+        "sub": (0.06, 0.00, 0.94, 0.70),
+    },
 }
 
 # Largest neighbour-to-neighbour colour step (max over R/G/B) the background flood may
@@ -115,8 +134,19 @@ MIN_KEPT_AREA = 0.20
 
 
 def out_name(family: str, state: str) -> str:
-    """`mascot_fried` for the hero family, `mascot_fried_bubble` for the bubble one."""
-    return f"mascot_{state}" if family == "hero" else f"mascot_{state}_bubble"
+    """`mascot_fried` (hero), `mascot_fried_bubble`, `mascot_head`."""
+    if family == "hero":
+        return f"mascot_{state}"
+    if family == "head":
+        return "mascot_head"
+    return f"mascot_{state}_bubble"
+
+
+def sub_crop(im: Image.Image, box: tuple[float, float, float, float]) -> Image.Image:
+    """Crop `im` to a relative (l, t, r, b) box. Used by the `head` family."""
+    w, h = im.size
+    left, top, right, bottom = box
+    return im.crop((round(left * w), round(top * h), round(right * w), round(bottom * h)))
 
 
 def needs_keying(im: Image.Image) -> bool:
@@ -274,6 +304,9 @@ def main() -> int:
     for family, cfg in FAMILIES.items():
         for state in cfg["states"]:
             master = images[state]
+            sub = cfg.get("sub")
+            if sub:
+                master = sub_crop(master, sub)
             for bucket, factor in DENSITIES.items():
                 size = target_size(master.size, cfg["base_dp"], factor)
                 target = RES / f"drawable-{bucket}"

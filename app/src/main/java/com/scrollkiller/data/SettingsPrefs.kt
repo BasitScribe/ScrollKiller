@@ -26,6 +26,9 @@ object SettingsPrefs {
     /** Day key of the last "the block is dead" early warning. See [blockWarnedOn]. */
     private const val KEY_BLOCK_WARNED_ON = "block_warned_on"
 
+    /** Observed: the system refused our overlay window. See [overlayRuntimeDenied]. */
+    private const val KEY_OVERLAY_RUNTIME_DENIED = "overlay_runtime_denied"
+
     /** Whether the floating counter bubble may show. Default on (matches Phase-1 behaviour). */
     fun isBubbleEnabled(context: Context): Boolean =
         prefs(context).getBoolean(KEY_BUBBLE_ENABLED, true)
@@ -105,6 +108,27 @@ object SettingsPrefs {
 
     fun setBlockWarnedOn(context: Context, dayKey: String) {
         prefs(context).edit().putString(KEY_BLOCK_WARNED_ON, dayKey).apply()
+    }
+
+    /**
+     * Did the system REFUSE our overlay window the last time we tried? (D52)
+     *
+     * The odd one out among these settings: every other value here is something the user chose,
+     * and this is something we OBSERVED. It exists because `Settings.canDrawOverlays` cannot be
+     * trusted on the MediaTek/Chinese ROMs our users run — it returns true while AppOps refuses
+     * the op, so the only honest answer to "can we block?" is "did the window actually appear last
+     * time we asked". That answer has to reach the UI process's banner from the service that
+     * discovered it, and it has to survive a service restart, so it is persisted rather than held
+     * in memory.
+     *
+     * Set on a refused or lost window, cleared on a verified attach — see
+     * [com.scrollkiller.service.BlockScreenController].
+     */
+    fun overlayRuntimeDenied(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_OVERLAY_RUNTIME_DENIED, false)
+
+    fun setOverlayRuntimeDenied(context: Context, denied: Boolean) {
+        prefs(context).edit().putBoolean(KEY_OVERLAY_RUNTIME_DENIED, denied).apply()
     }
 
     /**

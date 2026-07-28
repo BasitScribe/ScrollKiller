@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Bottom-nav glyph for the Apps tab (D58).
+
+    Hand-written rather than pulled from material-icons-extended: that dependency exists
+    to be searched, and adding an artifact to this APK for two 24dp shapes is a poor
+    trade. A phone outline is also unambiguous at 24dp in a way most icon-set choices
+    are not.
+
+    tint is applied by the caller (NavigationBarItem colours it from the theme), so the
+    fill here is white and never appears as-is.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFFFF">
+
+    <!-- Handset body: rounded rect, hollow so it reads as an outline at small sizes. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M7,2h10a3,3 0 0,1 3,3v14a3,3 0 0,1 -3,3H7a3,3 0 0,1 -3,-3V5a3,3 0 0,1 3,-3zM7,4a1,1 0 0,0 -1,1v14a1,1 0 0,0 1,1h10a1,1 0 0,0 1,-1V5a1,1 0 0,0 -1,-1z" />
+
+    <!-- Home indicator, so the shape is a PHONE rather than a generic rounded rectangle. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M10,17.2h4a0.8,0.8 0 0,1 0,1.6h-4a0.8,0.8 0 0,1 0,-1.6z" />
+
+</vector>

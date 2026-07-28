@@ -104,6 +104,65 @@ class ChallengeProgressTest {
         assertEquals(target, progress.progress)
     }
 
+    /* --- holds (ORIENTATION_HOLD / PROXIMITY_HOLD) ------------------------------------ */
+
+    @Test
+    fun `hold seconds are absolute and clamped, like a cumulative reading`() {
+        val progress = ChallengeProgress(30)
+        progress.onHoldElapsed(0)
+        assertEquals(0, progress.progress)
+        progress.onHoldElapsed(12)
+        assertEquals(12, progress.progress)
+        progress.onHoldElapsed(30)
+        assertTrue(progress.isComplete)
+        progress.onHoldElapsed(45)          // held past the target
+        assertEquals(30, progress.progress)
+    }
+
+    @Test
+    fun `a broken hold sends progress back to zero`() {
+        // THE anti-cheat. A pause would make a 30-second hold satisfiable as six five-second flips
+        // with a peek at Instagram between each. HoldDetector reports 0 on a break and the reset
+        // falls out of the absolute semantics — no separate signal needed.
+        val progress = ChallengeProgress(30)
+        progress.onHoldElapsed(25)
+        assertEquals(25, progress.progress)
+        progress.onHoldElapsed(0)
+        assertEquals("a break must not bank the 25", 0, progress.progress)
+    }
+
+    @Test
+    fun `completion is NOT sticky for holds, and that is deliberate`() {
+        // The counting inputs are monotonic so completion sticks; onHoldElapsed breaks that on
+        // purpose. Nothing downstream cares — ChallengeController latches onComplete in its own flag,
+        // so the reprieve is granted exactly once and the block is already down by the time this
+        // flips back. Pinned so nobody "fixes" the non-monotonicity by clamping isComplete.
+        val progress = ChallengeProgress(30)
+        progress.onHoldElapsed(30)
+        assertTrue(progress.isComplete)
+        progress.onHoldElapsed(0)
+        assertFalse("a hold that breaks after completing does go back to incomplete", progress.isComplete)
+    }
+
+    @Test
+    fun `a negative hold reading cannot draw the ring backwards`() {
+        // Only reachable from a clock that went backwards, but fraction feeds a view drawn over
+        // another app and a negative sweep is the worst place to discover one.
+        val progress = ChallengeProgress(30)
+        progress.onHoldElapsed(-5)
+        assertEquals(0, progress.progress)
+        assertEquals(0f, progress.fraction, 0.0001f)
+    }
+
+    @Test
+    fun `reset clears hold progress too`() {
+        val progress = ChallengeProgress(30)
+        progress.onHoldElapsed(18)
+        progress.reset()
+        assertEquals(0, progress.progress)
+        assertFalse(progress.isComplete)
+    }
+
     /* --- reset ------------------------------------------------------------------------ */
 
     @Test

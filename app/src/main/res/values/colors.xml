@@ -1,7 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- XML-side colors used by themes.xml (the base Android theme applied before
-     Compose draws). Compose has its own palette in ui/theme/Color.kt. -->
+<!--
+    XML-side colors for themes.xml — the base Android theme that paints the window
+    BEFORE any of our code runs.
+
+    THE ONE DOCUMENTED EXCEPTION to "brand colours live only in Brand.kt" (D58). This
+    value cannot be read from Kotlin: it is applied by the framework at window creation,
+    before Compose or the service exist. Everything else — Compose, the bubble, the block
+    screen — reads com.scrollkiller.ui.theme.Brand.
+
+    brand_window MUST stay equal to Brand.CANVAS, and brand_window_dark to
+    Brand.CANVAS_DARK. If you change one, change the other; there is no compiler or test
+    that can catch this pair drifting apart.
+-->
 <resources>
+    <!-- == Brand.CANVAS -->
+    <color name="brand_window">#FFF7F9FC</color>
+    <!-- == Brand.CANVAS_DARK -->
+    <color name="brand_window_dark">#FF121826</color>
+
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
 </resources>

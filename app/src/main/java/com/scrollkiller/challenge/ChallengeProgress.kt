@@ -27,7 +27,20 @@ class ChallengeProgress(private val target: Int) {
      */
     private var baseline: Long? = null
 
-    /** Done. Sticky: once true it stays true until [reset], so a late event cannot un-complete it. */
+    /**
+     * Done.
+     *
+     * ## Not sticky for holds, and that is deliberate
+     * Under the counting inputs ([onIncrement], [onCumulative]) progress only ever rises, so once
+     * this is true it stays true and a late event cannot un-complete it. [onHoldElapsed] BREAKS that
+     * monotonicity on purpose — a broken hold sends progress back to zero — so this can read true and
+     * then false again.
+     *
+     * Nothing downstream depends on the stickiness: [ChallengeController] latches completion in its
+     * own flag, so `onComplete` fires exactly once even if this flips back afterwards, and by then
+     * the block has already come down. Do NOT "fix" the non-monotonicity by clamping this — the reset
+     * IS the anti-cheat (see [onHoldElapsed]).
+     */
     val isComplete: Boolean get() = progress >= target
 
     /** How far along, 0f..1f. What the ring draws. */
@@ -69,6 +82,28 @@ class ChallengeProgress(private val target: Int) {
             return
         }
         progress = (total - base).coerceAtMost(target.toLong()).toInt()
+    }
+
+    /**
+     * Seconds a hold has been sustained ([SensorStrategy.ORIENTATION_HOLD],
+     * [SensorStrategy.PROXIMITY_HOLD]).
+     *
+     * ABSOLUTE and clamped, like [onCumulative] and unlike [onIncrement] — [HoldDetector] reports how
+     * long the condition has been continuously true, not a delta. That choice is what makes the reset
+     * free: a broken hold reports **0**, progress becomes 0, and no separate "the hold broke" signal
+     * is needed.
+     *
+     * ## Why going backwards is correct here
+     * This is the ONE input that can lower progress, and it is the anti-cheat. If a break paused the
+     * timer instead of resetting it, a 30-second face-down hold would be satisfiable as six
+     * five-second flips with a peek at Instagram between each. The user is told this in the prompt and
+     * feels it as a double buzz, so it is a rule rather than a surprise.
+     *
+     * Negative input is coerced to zero rather than trusted: it can only come from a clock that went
+     * backwards, and a negative progress would draw the ring in reverse over someone else's app.
+     */
+    fun onHoldElapsed(seconds: Int) {
+        progress = seconds.coerceIn(0, target)
     }
 
     /**

@@ -170,6 +170,45 @@ class PlatformRegistryTest {
     }
 
     @Test
+    fun `a modified client resolves to the same platform (D52)`() {
+        // ReVanced YouTube ships under its own package and was silently untracked until a capture
+        // showed it going by. It is the SAME platform — one Shorts habit, one daily_counts row —
+        // so both packages must land on Platform.YOUTUBE and share one spec.
+        assertEquals(
+            Platform.YOUTUBE,
+            PlatformRegistry.detectPlatform(null, "app.revanced.android.youtube"),
+        )
+        assertEquals(
+            PlatformRegistry.specFor(Platform.YOUTUBE),
+            PlatformRegistry.forPackage("app.revanced.android.youtube"),
+        )
+        // The canonical package is unchanged, so aggregate rows and existing data are untouched.
+        assertEquals("com.google.android.youtube", PlatformRegistry.specFor(Platform.YOUTUBE).packageName)
+    }
+
+    @Test
+    fun `package names are unique across the whole registry`() {
+        // Two specs claiming one package would make forPackage's firstOrNull order-dependent —
+        // the same class of silent wrongness as a duplicated shortName, and much harder to see
+        // now that a spec can declare several.
+        val all = PlatformRegistry.enabled.flatMap { it.packageNames }
+        assertEquals("duplicate package across specs in $all", all.size, all.toSet().size)
+    }
+
+    @Test
+    fun `every spec declares at least one package`() {
+        // packageName reads packageNames.first(); an empty list would throw at the first event
+        // from any app, inside an AccessibilityService callback.
+        PlatformRegistry.enabled.forEach { spec ->
+            assertTrue("${spec.platform} has no packages", spec.packageNames.isNotEmpty())
+            assertTrue(
+                "${spec.platform} has a blank package",
+                spec.packageNames.all { it.isNotBlank() },
+            )
+        }
+    }
+
+    @Test
     fun `container match is package-agnostic - support-library and androidx RecyclerView both hit (D27)`() {
         val youtube = PlatformRegistry.specFor(Platform.YOUTUBE)
         // The bug: YouTube Shorts scrolls the LEGACY support-library RecyclerView. A

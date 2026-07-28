@@ -2,5 +2,9 @@
 <!-- Dark-mode variant of the base XML theme. Android automatically picks this
      folder (-night) when the device is in dark mode. -->
 <resources>
-    <style name="Theme.ScrollKiller" parent="android:Theme.Material.NoActionBar" />
+    <!-- windowBackground mirrors Brand.CANVAS_DARK, so the launch window matches the dark
+         Compose canvas instead of flashing white. See values/colors.xml (D58). -->
+    <style name="Theme.ScrollKiller" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/brand_window_dark</item>
+    </style>
 </resources>

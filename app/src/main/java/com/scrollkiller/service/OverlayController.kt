@@ -14,8 +14,11 @@ import android.view.View
 import android.view.ViewConfiguration
 import android.view.WindowManager
 import com.scrollkiller.brain.BrainState
+import com.scrollkiller.challenge.ChallengeAvailability
 import com.scrollkiller.challenge.ChallengeController
+import com.scrollkiller.challenge.ChallengeHaptics
 import com.scrollkiller.challenge.ChallengeRegistry
+import com.scrollkiller.challenge.ChallengeSpec
 import com.scrollkiller.data.CountLatency
 import com.scrollkiller.data.CountRepository
 import com.scrollkiller.data.SettingsPrefs
@@ -111,13 +114,30 @@ class OverlayController(
             context,
             onExit = ::onExit,
             onSnooze = ::onSnooze,
-            onStartChallenge = ::onStartChallenge,
+            onOpenChooser = ::onOpenChooser,
+            onChooseChallenge = ::onChooseChallenge,
             onCancelChallenge = ::onCancelChallenge,
+            onWindowLost = ::onBlockWindowLost,
         )
     }
 
     /** The physical unlock (D50). Owns the sensor; knows nothing about what completing is worth. */
     private val challenge: ChallengeController by lazy { ChallengeController(context) }
+
+    /**
+     * The challenge the last "Surprise me" drew, excluded from the next draw so two consecutive
+     * surprises are never the same one (D53). Deliberately NOT reset in [offSurface]: the point is
+     * that the surprise feels like variety, and re-offering the same challenge on the next block
+     * half an hour later is exactly the repeat the feature exists to avoid. Lives as long as the
+     * service.
+     */
+    private var lastSurpriseId: String? = null
+
+    /**
+     * Completion and hold-broken buzzes (D54). Lives here rather than in [ChallengeController]
+     * because vibrating is a product decision and that class's contract is that it decides nothing.
+     */
+    private val haptics: ChallengeHaptics by lazy { ChallengeHaptics(context) }
 
     /** Tells the user, out of app, when the block cannot fire (D51). The nudge, not the net. */
     private val notifier: BlockUnavailableNotifier by lazy { BlockUnavailableNotifier(context) }
@@ -277,7 +297,7 @@ class OverlayController(
             setExpanded(it, false)
             setBubbleShown(it, false)
         }
-        hideBlock()
+        hideBlock("left the surface")
     }
 
     /** Full teardown for service destroy/unbind: stop work and remove the windows. */
@@ -363,16 +383,39 @@ class OverlayController(
                     notifier.warnBlockPrevented()
                     return
                 }
-                // Permission is fine — clear any warning left from when it wasn't, so a fixed
-                // problem does not keep announcing itself.
-                notifier.cancel()
                 // blockLine draws ONCE per episode and re-renders its tokens on every emission,
                 // so the sentence holds while `{count}` stays live — and an unbroken block does
                 // not eat the tier's 7-day pool one line per emission (D49).
-                block.show(platform, GuiltLines.blockLine(context, summary.total))
+                //
+                // The RESULT is acted on, not discarded (D52). `canBlock` above can be true and
+                // this still fail: on the ROMs our users run, `canDrawOverlays` returns true while
+                // AppOps refuses the window. Only the attempt itself knows.
+                when (block.show(platform, GuiltLines.blockLine(context, summary.total))) {
+                    BlockScreenController.ShowResult.SHOWN,
+                    BlockScreenController.ShowResult.ALREADY_SHOWING,
+                    -> {
+                        // The window verifiably exists. Clear both the observed denial and any
+                        // warning left over from when it did not, so a fixed problem stops
+                        // announcing itself.
+                        if (SettingsPrefs.overlayRuntimeDenied(context)) {
+                            SettingsPrefs.setOverlayRuntimeDenied(context, false)
+                            Log.d(TAG, "block: window is back; clearing the runtime-denied flag")
+                        }
+                        notifier.cancel()
+                    }
+
+                    BlockScreenController.ShowResult.NO_PERMISSION,
+                    BlockScreenController.ShowResult.FAILED,
+                    -> onBlockWindowLost()
+
+                    // Suppressed by the cooldown after a recent refusal. The user has already been
+                    // warned and the flag is already set — do nothing at all, which is the entire
+                    // point: this is the path that used to inflate a fresh block_root per reel.
+                    BlockScreenController.ShowResult.COOLING_DOWN -> Unit
+                }
             }
             SurfaceOverlay.BUBBLE -> {
-                hideBlock()
+                hideBlock("under the limit or in grace")
                 val view = bubble ?: return          // no overlay permission — nothing to show
                 if (!SettingsPrefs.isBubbleEnabled(context)) {
                     cancelNudge()
@@ -488,41 +531,94 @@ class OverlayController(
      * Take the block down and release its line. The ONE way the block is dismissed, so a
      * dismissal can never forget to end the episode and hand the next block a stale sentence.
      */
-    private fun hideBlock() {
+    /**
+     * The block's window was refused, or the system took it away underneath us (D52).
+     *
+     * Records the OBSERVED denial so [PermissionHealth] — and therefore the Home banner — stops
+     * believing `canDrawOverlays`, and warns out of app through the same D51 path a plainly
+     * missing permission uses. From the user's side the two are the same event: they hit their
+     * limit and nothing stopped them.
+     *
+     * No retry is scheduled. [BlockRetryPolicy] inside the controller already suppresses attempts
+     * for its cooldown, and the render path will try again on the next emission after that —
+     * which is what makes a ROM that relents recover on its own.
+     */
+    private fun onBlockWindowLost() {
+        SettingsPrefs.setOverlayRuntimeDenied(context, true)
+        Log.w(TAG, "block: window unavailable — marking overlay runtime-denied and warning the user")
+        notifier.warnBlockPrevented()
+    }
+
+    private fun hideBlock(reason: String = "unspecified") {
         GuiltLines.endBlockEpisode()
         // Releases the step sensor. Routed through here rather than sprinkled across the exit,
         // snooze and completion paths for the same reason endBlockEpisode is: a dismissal that
         // forgets leaves a sensor registered by a background service, which is a battery
         // complaint nobody ever traces back to us (D50).
         challenge.stop()
-        block.hide()
+        block.hide(reason)
     }
 
     /**
-     * The user chose to earn their way out. Swap the block window's content to the challenge and
-     * start the sensor.
+     * The user asked to earn their way out. Show the CHOOSER; start nothing yet (D53).
      *
-     * If the sensor refuses to start we stay on the block rather than showing a ring that can
-     * never move — a user standing in their kitchen walking at a frozen 0/20 concludes the app is
-     * broken, and they are not wrong. The button is already hidden unless [MotionStatus] says the
-     * device can do this, so reaching the false branch means something changed underneath us
-     * (a permission revoked while the block was up).
+     * Availability is recomputed here rather than reused from [BlockScreenController.show]'s check:
+     * the block can sit on screen for minutes, and a permission revoked in that window would
+     * otherwise offer a challenge that cannot run.
      */
-    private fun onStartChallenge() {
-        val spec = ChallengeRegistry.default ?: return
-        val started = challenge.start(
-            spec = spec,
-            onProgress = { block.renderChallengeProgress(challenge.currentProgress, spec.target) },
-            onComplete = ::onChallengeComplete,
-        )
-        if (!started) {
-            Log.w(TAG, "challenge sensor unavailable; staying on the block")
+    private fun onOpenChooser() {
+        val available = ChallengeAvailability.available(context)
+        if (available.isEmpty()) {
+            Log.w(TAG, "chooser: nothing available; staying on the block")
             return
         }
-        block.showChallenge(spec)
+        block.showChooser(available)
     }
 
-    /** Backed out. Return to the block and release the sensor; progress is dropped, not banked. */
+    /**
+     * A challenge was picked. Swap the block window's content to it and start the sensor.
+     *
+     * @param spec what the user picked, or NULL for "Surprise me" — the draw happens here because
+     *   which challenges are available is not the view's business. [ChallengeRegistry.surpriseMe]
+     *   excludes [lastSurpriseId] so two consecutive surprises are never the same challenge.
+     *
+     * If the sensor refuses to start we stay on the chooser rather than showing a ring that can
+     * never move — a user standing in their kitchen jumping at a frozen 0/10 concludes the app is
+     * broken, and they are not wrong. Availability was just checked, so reaching the false branch
+     * means the hardware refused registration rather than being absent.
+     */
+    private fun onChooseChallenge(spec: ChallengeSpec?) {
+        val chosen = spec ?: ChallengeRegistry.surpriseMe(
+            candidates = ChallengeAvailability.available(context),
+            avoid = lastSurpriseId,
+        ) ?: return
+        if (spec == null) lastSurpriseId = chosen.id
+
+        val started = challenge.start(
+            spec = chosen,
+            onProgress = {
+                block.renderChallengeProgress(challenge.currentProgress, chosen.target, chosen.unit)
+            },
+            onComplete = ::onChallengeComplete,
+            // The hold challenges point the ring at the floor, so a buzz is the ONLY way the user
+            // learns they let go. Without it they flip up to check, which breaks the hold they were
+            // checking on, and the challenge reads as broken (D54).
+            onBroken = haptics::broken,
+        )
+        if (!started) {
+            Log.w(TAG, "challenge sensor unavailable for ${chosen.id}; staying on the chooser")
+            return
+        }
+        block.showChallenge(chosen)
+    }
+
+    /**
+     * Backed out of the chooser or a running challenge. Return to the block and release the sensor;
+     * progress is dropped, not banked.
+     *
+     * One handler for both panels' Back because the work is identical, and because [challenge.stop]
+     * being idempotent means calling it from the chooser (where nothing is running) is free.
+     */
     private fun onCancelChallenge() {
         challenge.stop()
         block.showBlockPanel()
@@ -538,13 +634,17 @@ class OverlayController(
      * lapses, and no timer is involved — holds here unchanged.
      */
     private fun onChallengeComplete() {
+        // Buzz FIRST, before the block comes down. On a face-down hold this is the only signal the
+        // user gets — the ring they earned is pointing at a table — and it is what tells them to flip
+        // the phone over at all.
+        haptics.complete()
         val platform = currentPlatform ?: return
         SettingsPrefs.setGraceUntilMs(
             context,
             platform,
             System.currentTimeMillis() + BlockLimits.CHALLENGE_GRACE_MS,
         )
-        hideBlock()
+        hideBlock("challenge completed")
         render(platform, lastSummary)
     }
 
@@ -563,7 +663,7 @@ class OverlayController(
      * be looking at Instagram rather than at an overlay that would not go away.
      */
     private fun onExit() {
-        hideBlock()
+        hideBlock("exit")
         val intent = Intent(Intent.ACTION_MAIN).apply {
             addCategory(Intent.CATEGORY_HOME)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -594,7 +694,7 @@ class OverlayController(
             platform,
             System.currentTimeMillis() + BlockLimits.GRACE_MS,
         )
-        hideBlock()
+        hideBlock("snooze")
         render(platform, lastSummary)
     }
 

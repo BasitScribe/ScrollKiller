@@ -2,25 +2,31 @@
 <!--
     Full-screen block screen shown over the reel surface once the daily limit is hit.
     Deliberately, unmistakably ScrollKiller's OWN screen — it does not mimic Instagram
-    or system chrome (Play policy / never-deceive). Fixed dark colors because it draws
-    over another app, outside our Compose theme (same rationale as overlay_bubble_bg).
+    or system chrome (Play policy / never-deceive).
     The user is never trapped: Exit leaves the app and Back maps to Exit.
 
-    TWO PANELS, one window (D50). block_panel is the block itself; challenge_panel is the
-    physical unlock. Exactly one is VISIBLE at a time and the ROOT never goes GONE — a child
-    toggle inside an already-attached window, the same shape as the bubble's expand (D37),
-    so starting a challenge is not a second window and not a window rebuild.
+    NO BRAND COLOURS LIVE HERE (D58). The root background and every text colour are
+    applied in CODE by BlockScreenController from Brand, because this window draws over
+    another app and so is outside the Compose theme — Brand.kt is the one source both
+    render paths read. Do not add an android:background or a textColor hex to this file;
+    that is how the second, drifting palette came to exist in the first place.
 
-    BOTH panels carry their own Exit. That is not duplication for its own sake: a
-    challenge screen offering only "Cancel" would be a second screen the user has to escape
-    before they can escape, which is precisely what invariant 6 forbids.
+    THREE PANELS, one window (D50, extended by D53). block_panel is the block itself;
+    chooser_panel is where the user picks a challenge; challenge_panel is the challenge running.
+    Exactly one is VISIBLE at a time and the ROOT never goes GONE — a child toggle inside an
+    already-attached window, the same shape as the bubble's expand (D37), so neither picking nor
+    starting a challenge is a second window or a window rebuild.
+
+    ALL THREE panels carry their own Exit. That is not duplication for its own sake: a
+    challenge or chooser screen offering only "Back" would be a second screen the user has to
+    escape before they can escape, which is precisely what invariant 6 forbids. Adding the
+    chooser added a panel to escape from, which is exactly why it got its own Exit too.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/block_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#F20D0D0D"
     android:orientation="vertical"
     android:gravity="center"
     android:padding="32dp"
@@ -56,7 +62,6 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
             android:text="@string/block_title"
-            android:textColor="#FFFFFFFF"
             android:textSize="28sp"
             android:textStyle="bold" />
 
@@ -66,7 +71,6 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
             android:gravity="center"
-            android:textColor="#CCFFFFFF"
             android:textSize="16sp"
             tools:ignore="HardcodedText" />
 
@@ -109,6 +113,72 @@
 
     </LinearLayout>
 
+    <!-- ===================== THE CHOOSER ===================== -->
+    <!--
+        Which challenge. The user picks rather than being handed one (D53): agency helps
+        compliance, and with more than one option picking FOR them means the person who cannot
+        jump in a first-floor flat at 2am, or cannot walk because they are seated on a train,
+        gets no way to earn their way out at all.
+
+        The option rows are added in CODE, not declared here, because which challenges exist is
+        ChallengeRegistry's business and which of them this device can run is
+        ChallengeAvailability's — a row per spec in XML would be a second list to drift from the
+        first. They are inserted into chooser_options.
+    -->
+    <LinearLayout
+        android:id="@+id/chooser_panel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:visibility="gone">
+
+        <!-- The mascot follows you onto the chooser (D58). Without it this panel was a title and a
+             stack of buttons on black, which read as a system dialog rather than as part of the app
+             the user was just looking at. Reuses the pre-scaled 40dp BUBBLE asset rather than a new
+             size family — it is already generated, already the right size, and costs nothing. -->
+        <ImageView
+            android:id="@+id/chooser_mascot"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:adjustViewBounds="true"
+            android:contentDescription="@null"
+            android:src="@drawable/mascot_healthy_bubble" />
+
+        <TextView
+            android:id="@+id/chooser_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:layout_marginTop="12dp"
+            android:text="@string/challenge_chooser_title"
+            android:textSize="22sp"
+            android:textStyle="bold" />
+
+        <!-- Exit FIRST, before the options, for the same traversal reason as the block panel:
+             TalkBack reaches the way out before any way to keep scrolling. -->
+        <Button
+            android:id="@+id/chooser_exit"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="@string/block_exit" />
+
+        <LinearLayout
+            android:id="@+id/chooser_options"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
+        <Button
+            android:id="@+id/chooser_back"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="@string/challenge_cancel" />
+
+    </LinearLayout>
+
     <!-- ===================== THE CHALLENGE ===================== -->
     <LinearLayout
         android:id="@+id/challenge_panel"
@@ -117,6 +187,17 @@
         android:orientation="vertical"
         android:gravity="center"
         android:visibility="gone">
+
+        <!-- HEALTHY, not GUARDIAN: mid-challenge the user is doing the healthy thing, and the ring
+             beside it is drawn in the same mint (Brand.STATE_HEALTHY) for that reason. -->
+        <ImageView
+            android:id="@+id/challenge_mascot"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:layout_marginBottom="16dp"
+            android:adjustViewBounds="true"
+            android:contentDescription="@null"
+            android:src="@drawable/mascot_healthy_bubble" />
 
         <com.scrollkiller.challenge.ProgressRingView
             android:id="@+id/challenge_ring"
@@ -131,7 +212,6 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="24dp"
             android:gravity="center"
-            android:textColor="#FFFFFFFF"
             android:textSize="20sp"
             android:textStyle="bold"
             tools:ignore="HardcodedText" />
@@ -142,7 +222,6 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:gravity="center"
-            android:textColor="#CCFFFFFF"
             android:textSize="15sp"
             tools:ignore="HardcodedText" />
 

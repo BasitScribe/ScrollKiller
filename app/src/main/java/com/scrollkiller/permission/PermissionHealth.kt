@@ -12,10 +12,14 @@ package com.scrollkiller.permission
  *   because the service that would post it is not running.
  * - [OVERLAY]: counting works perfectly and the block is dead. THE gap that caused D51: the app
  *   counted to 108, decided to block a hundred times, and was refused every time.
- * - [NOTIFICATIONS]: everything works; the app just cannot warn you about the two above while you
+ * - [OVERLAY_BLOCKED_BY_SYSTEM]: the permission is GRANTED as far as Android will admit, and the
+ *   window still does not appear (D52). Same severity as [OVERLAY] — the block is equally dead —
+ *   but it needs its own entry because the user-facing advice is completely different: telling
+ *   someone to grant a permission their settings screen already shows as granted is a dead end.
+ * - [NOTIFICATIONS]: everything works; the app just cannot warn you about the ones above while you
  *   are outside it. Degraded, not broken — see [PermissionHealth.isFullyActive].
  */
-enum class PermissionGap { ACCESSIBILITY, OVERLAY, NOTIFICATIONS }
+enum class PermissionGap { ACCESSIBILITY, OVERLAY, OVERLAY_BLOCKED_BY_SYSTEM, NOTIFICATIONS }
 
 /**
  * Can the app actually do its job right now? ONE answer, read by both the block path and the UI.
@@ -35,22 +39,33 @@ enum class PermissionGap { ACCESSIBILITY, OVERLAY, NOTIFICATIONS }
  * @param canDrawOverlays SYSTEM_ALERT_WINDOW is granted. Without it Android refuses the window
  *   with `AppOps: Operation not started op=SYSTEM_ALERT_WINDOW` and the block never appears.
  * @param canNotify POST_NOTIFICATIONS is granted (or the OS is old enough not to need it).
+ * @param overlayRuntimeDenied we OBSERVED the system refuse or destroy our overlay window (D52).
+ *   The odd one out: the other three are answers to questions we asked Android, this is something
+ *   that happened to us. It exists because on MediaTek/Chinese ROMs [canDrawOverlays] returns TRUE
+ *   while AppOps refuses `SYSTEM_ALERT_WINDOW` at runtime — the permission query lies, and the only
+ *   honest signal left is whether the window actually appeared.
  */
 data class PermissionHealth(
     val accessibilityEnabled: Boolean,
     val canDrawOverlays: Boolean,
     val canNotify: Boolean,
+    val overlayRuntimeDenied: Boolean = false,
 ) {
 
     /** Counting works. */
     val canDetect: Boolean get() = accessibilityEnabled
 
     /**
-     * The block can actually appear. BOTH halves are required and that is the whole point: the
-     * D51 failure had `canDetect` true and this false, which is precisely the state that used to
-     * produce no signal at all.
+     * The block can actually appear. All three conditions are required and that is the whole
+     * point: the D51 failure had `canDetect` true and this false, which is precisely the state
+     * that used to produce no signal at all.
+     *
+     * [overlayRuntimeDenied] is the D52 addition and it OVERRIDES a granted-looking permission.
+     * "Android says we may draw overlays" and "our overlay window exists" turned out to be
+     * different facts, and only the second one blocks anyone.
      */
-    val canBlock: Boolean get() = accessibilityEnabled && canDrawOverlays
+    val canBlock: Boolean
+        get() = accessibilityEnabled && canDrawOverlays && !overlayRuntimeDenied
 
     /** We can tell the user about a problem while they are outside the app. */
     val canWarnOutOfApp: Boolean get() = canNotify
@@ -77,7 +92,10 @@ data class PermissionHealth(
     val firstMissing: PermissionGap?
         get() = when {
             !accessibilityEnabled -> PermissionGap.ACCESSIBILITY
+            // Checked BEFORE the runtime denial: if the permission is genuinely missing, that is
+            // the thing to fix, and the observed refusal is just its consequence.
             !canDrawOverlays -> PermissionGap.OVERLAY
+            overlayRuntimeDenied -> PermissionGap.OVERLAY_BLOCKED_BY_SYSTEM
             !canNotify -> PermissionGap.NOTIFICATIONS
             else -> null
         }
@@ -88,6 +106,7 @@ data class PermissionHealth(
             accessibilityEnabled = true,
             canDrawOverlays = true,
             canNotify = true,
+            overlayRuntimeDenied = false,
         )
     }
 }

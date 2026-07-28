@@ -75,6 +75,13 @@
     <string name="health_banner_title">ScrollKiller is not fully active</string>
     <string name="health_banner_accessibility">The detection service is off — nothing is being counted.</string>
     <string name="health_banner_overlay">Display over other apps is off, so the block can\'t appear. Your reels are still being counted.</string>
+    <!--
+        The ROM-lies case (D52): the permission reads as GRANTED and the window is still refused.
+        The copy must NOT say "grant the permission" — the user would open Settings, see the
+        switch already on, and conclude we are broken. Toggling it off and on is genuinely the fix
+        on the devices that do this, so that is what it says.
+    -->
+    <string name="health_banner_overlay_blocked">Your device is blocking ScrollKiller from drawing over other apps, even though the permission looks granted. Counting still works. Try turning \"Display over other apps\" off and on again.</string>
     <string name="health_banner_degraded_title">Heads-up alerts are off</string>
     <string name="health_banner_notifications">ScrollKiller works, but it can\'t warn you if blocking ever stops working while you\'re in another app.</string>
     <string name="health_banner_fix">Fix</string>
@@ -123,12 +130,28 @@
          the promise on the button cannot drift from the reprieve the policy actually grants. -->
     <string name="block_snooze">%1$d more minutes</string>
 
-    <!-- Physical unlock challenges (D50). The challenge button names BOTH its cost and its
-         reward, because the whole design rests on the user choosing the harder path knowingly:
-         a small free thing next to a larger earned one. Both numbers are format args from
-         ChallengeSpec.target and BlockLimits.CHALLENGE_GRACE_MINUTES. -->
-    <string name="block_challenge">Walk %1$d steps — get %2$d minutes</string>
+    <!-- Physical unlock challenges (D50). The block-panel button names its REWARD, because the
+         design rests on the user choosing the harder path knowingly: a small free thing next to a
+         larger earned one, side by side. It no longer names a specific challenge — the user picks
+         one on the chooser (D53) — so the cost is named per option there instead.
+         Minutes is a format arg from BlockLimits.CHALLENGE_GRACE_MINUTES, never written as copy. -->
+    <string name="block_challenge">Earn your way out — %1$d minutes</string>
+
+    <!-- The chooser (D53). challenge_option wraps each spec's own prompt so cost and reward stay
+         named together without a second per-challenge string to drift from the first: %1$s is the
+         spec's promptRes already formatted with its target, %2$d is the shared reward. -->
+    <string name="challenge_chooser_title">Pick your way out</string>
+    <string name="challenge_option">%1$s — %2$d minutes</string>
+    <string name="challenge_surprise">Surprise me</string>
+
+    <!-- One prompt per challenge, each taking its target as the single format arg so the sentence
+         cannot drift from the number the engine counts to. -->
     <string name="challenge_walk_prompt">Walk %1$d steps</string>
+    <string name="challenge_jump_prompt">Jump %1$d times</string>
+    <!-- The hold prompts state the RESET rule up front. It has to be a promise, not a surprise: a
+         user who learns about it by losing 25 seconds reads the challenge as broken. -->
+    <string name="challenge_face_down_prompt">Phone face down for %1$d seconds — lift it and the timer restarts</string>
+    <string name="challenge_forehead_prompt">Hold the phone to your forehead for %1$d seconds — take it away and the timer restarts</string>
     <string name="challenge_reward">Finish and you get %1$d minutes</string>
     <string name="challenge_cancel">Back</string>
     <!-- NOTE: guilt lines are NOT string resources. They live in assets/guilt_pack.json so the

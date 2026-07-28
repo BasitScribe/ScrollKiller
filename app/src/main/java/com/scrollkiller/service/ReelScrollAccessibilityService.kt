@@ -255,7 +255,10 @@ class ReelScrollAccessibilityService : AccessibilityService() {
                 IdentityAdvanceDetector(spec.minAdvanceIntervalMs)
             }
             val advance = detector.onIdentity(identity, now)
-            if (advance == IdentityAdvanceDetector.Advance.COUNTED) repository.record(spec, now)
+            if (advance == IdentityAdvanceDetector.Advance.COUNTED) {
+                // The REAL package, not the spec's canonical one: YouTube has variants (D52).
+                repository.record(spec, now, sourcePackage = event.packageName?.toString() ?: spec.packageName)
+            }
 
             if (DEBUG && spec.platform == Platform.YOUTUBE) {
                 YtProbe.log(
@@ -360,7 +363,11 @@ class ReelScrollAccessibilityService : AccessibilityService() {
                 val detector = detectors.getOrPut(spec.platform) { SwipeDetector(spec.minAdvanceIntervalMs) }
                 // Debounce the fling burst into a single forward advance.
                 if (detector.onScroll(direction, now)) {
-                    repository.record(spec, now)
+                    repository.record(
+                        spec,
+                        now,
+                        sourcePackage = event.packageName?.toString() ?: spec.packageName,
+                    )
                     counted = true
                     branch = YtProbe.Branch.COUNTED
                     reason = if (spec.gating == GatingMode.SHADOW && !markerMatched) {

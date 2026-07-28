@@ -8,5 +8,15 @@
     Uses framework themes so we don't need the extra Material Components library.
 -->
 <resources>
-    <style name="Theme.ScrollKiller" parent="android:Theme.Material.Light.NoActionBar" />
+    <!--
+        windowBackground is set so the launch window paints the BRAND canvas instead of the
+        framework's white. Without it there is a white flash before Compose's first frame,
+        which on a dark-theme device is genuinely unpleasant.
+
+        @color/brand_window mirrors Brand.CANVAS — see colors.xml for why this one value is
+        allowed to live outside Brand.kt (D58).
+    -->
+    <style name="Theme.ScrollKiller" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/brand_window</item>
+    </style>
 </resources>

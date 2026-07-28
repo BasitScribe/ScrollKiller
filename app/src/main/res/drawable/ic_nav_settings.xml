@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Bottom-nav glyph for the Settings tab (D58). Hand-written, same reasoning as
+    ic_nav_apps: no icon-set dependency for two 24dp shapes.
+
+    Two sliders rather than the usual gear. A gear at 24dp turns into a fuzzy blob
+    (all those teeth are sub-pixel), whereas two horizontal rules with knobs stay
+    crisp — and this screen genuinely IS sliders: the daily limit and the toggles.
+
+    tint is applied by the caller; the fill below never ships as-is.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFFFF">
+
+    <!-- Upper track + knob sitting right of centre. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M3,7.2h11a1.1,1.1 0 0,1 0,2.2H3a1.1,1.1 0 0,1 0,-2.2z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M17.5,5.1a3.2,3.2 0 1,1 0,6.4a3.2,3.2 0 0,1 0,-6.4zM17.5,7.1a1.2,1.2 0 1,0 0,2.4a1.2,1.2 0 0,0 0,-2.4z" />
+
+    <!-- Lower track + knob left of centre, so the two rows are visibly different settings. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M10,14.6h11a1.1,1.1 0 0,1 0,2.2H10a1.1,1.1 0 0,1 0,-2.2z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M6.5,12.5a3.2,3.2 0 1,1 0,6.4a3.2,3.2 0 0,1 0,-6.4zM6.5,14.5a1.2,1.2 0 1,0 0,2.4a1.2,1.2 0 0,0 0,-2.4z" />
+
+</vector>

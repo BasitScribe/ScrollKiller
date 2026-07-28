@@ -86,6 +86,13 @@ enum class Maturity { STABLE, BETA }
  * not code: inspect its short-video view tree, then append a [PlatformSpec] to
  * [PlatformRegistry.enabled].
  *
+ * @param packageNames every package that IS this platform. A LIST rather than one string because
+ *   modified clients are common among exactly the people this app is for — ReVanced YouTube ships
+ *   as `app.revanced.android.youtube` and was invisible to us until D52. All variants share one
+ *   [Platform], and therefore one row in `daily_counts`: a user's Shorts habit is one habit whether
+ *   they watch it through Google's client or someone else's. The first entry is the CANONICAL one
+ *   (see [packageName]). Every entry must be unique across the whole registry, or [forPackage]
+ *   becomes order-dependent — asserted in tests.
  * @param containerHints SIMPLE class names (no package) of the scrolled short-video
  *   container, e.g. "RecyclerView", "ViewPager", "ViewPager2". Matched via
  *   [matchesContainer] on the simple name so a legacy support-library widget matches an
@@ -151,7 +158,7 @@ enum class Maturity { STABLE, BETA }
  */
 data class PlatformSpec(
     val platform: Platform,
-    val packageName: String,
+    val packageNames: List<String>,
     val containerHints: List<String>,
     val minAdvanceIntervalMs: Long,
     val surfaceMarkers: List<String> = emptyList(),
@@ -168,6 +175,13 @@ data class PlatformSpec(
     val identityTitleHints: List<String> = emptyList(),
     val maturity: Maturity = Maturity.STABLE,
 ) {
+    /**
+     * The CANONICAL package for this platform — the first entry, and the one recorded on aggregate
+     * rows. Kept so the many call sites that only need "which app is this, roughly" did not all
+     * have to learn about variants when [packageNames] became a list (D52).
+     */
+    val packageName: String get() = packageNames.first()
+
     /** True when this platform drops counts off-surface (a wrong marker undercounts). */
     val enforcesSurface: Boolean get() = gating == GatingMode.ENFORCED
 
@@ -229,7 +243,7 @@ object PlatformRegistry {
 
     private val instagram = PlatformSpec(
         platform = Platform.INSTAGRAM,
-        packageName = "com.instagram.android",
+        packageNames = listOf("com.instagram.android"),
         // The reel pager. Field-observed on the shipping IG build: the real advance signal
         // (non-zero scrollDeltaY) comes from the ViewPager v1 (`ViewPager`, simple name). The
         // inner RecyclerView fires alongside but always reports deltaY=0 (settle noise). See D15.
@@ -265,7 +279,16 @@ object PlatformRegistry {
 
     private val youtube = PlatformSpec(
         platform = Platform.YOUTUBE,
-        packageName = "com.google.android.youtube",
+        // Stock YouTube first (canonical), then ReVanced — a modified client that is common
+        // among exactly our target users and was silently untracked until a capture showed
+        // `pkg=app.revanced.android.youtube` going by (D52). Same markers, same IDENTITY_CHANGE
+        // strategy, same spec: it IS YouTube Shorts, just built by someone else.
+        //
+        // Its Shorts markers are NOT device-verified. That is safe to ship untoured precisely
+        // because YT is ENFORCED — an unmatched `reel_recycler` UNDERCOUNTS rather than counting a
+        // home feed — and because YT is BETA, so it cannot drive a limit or a block either way.
+        // Promotion still waits on a Shorts tour, now on both clients.
+        packageNames = listOf("com.google.android.youtube", "app.revanced.android.youtube"),
         // Simple names (D27). YouTube Shorts scrolls the LEGACY support-library RecyclerView
         // (event class `android.support.v7.widget.RecyclerView`) — the old fully-qualified
         // `endsWith` hint never matched it, so Shorts counted ZERO (D27). Simple-name matching
@@ -318,7 +341,7 @@ object PlatformRegistry {
         // Global TikTok. NOTE: the spec's "com.ss.android.ugc.tiktok" is not a real
         // package — global is com.zhiliaoapp.musically; regional variants are
         // com.ss.android.ugc.trill / com.ss.android.ugc.aweme (add specs if targeting them).
-        packageName = "com.zhiliaoapp.musically",
+        packageNames = listOf("com.zhiliaoapp.musically"),
         containerHints = listOf("ViewPager2", "RecyclerView"),
         minAdvanceIntervalMs = 200L,
         // NOT TOURED (D28). TikTok ids are heavily obfuscated and these markers are pure
@@ -342,7 +365,7 @@ object PlatformRegistry {
 
     private val snapchat = PlatformSpec(
         platform = Platform.SNAPCHAT,
-        packageName = "com.snapchat.android",
+        packageNames = listOf("com.snapchat.android"),
         containerHints = listOf("ViewPager2", "RecyclerView"),
         minAdvanceIntervalMs = 200L,
         // NOT TOURED (D28). "spotlight" is a plausible but unverified guess. Left in SHADOW
@@ -370,7 +393,7 @@ object PlatformRegistry {
     /** Spec whose package produced this event, or null if it's not a tracked app. */
     fun forPackage(packageName: CharSequence?): PlatformSpec? {
         val pkg = packageName?.toString() ?: return null
-        return enabled.firstOrNull { it.packageName == pkg }
+        return enabled.firstOrNull { pkg in it.packageNames }
     }
 
     /**
@@ -398,7 +421,7 @@ object PlatformRegistry {
         enabled.firstOrNull { it.platform == platform }
 
     /** Tracked packages. Kept for diagnostics and any future re-scoping. */
-    val packageNames: List<String> get() = enabled.map { it.packageName }
+    val packageNames: List<String> get() = enabled.flatMap { it.packageNames }
 }
 
 /**

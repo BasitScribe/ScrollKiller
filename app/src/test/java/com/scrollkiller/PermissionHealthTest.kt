@@ -22,7 +22,8 @@ class PermissionHealthTest {
         accessibility: Boolean = true,
         overlay: Boolean = true,
         notify: Boolean = true,
-    ) = PermissionHealth(accessibility, overlay, notify)
+        runtimeDenied: Boolean = false,
+    ) = PermissionHealth(accessibility, overlay, notify, runtimeDenied)
 
     /* --- the incident ------------------------------------------------------------------ */
 
@@ -37,13 +38,48 @@ class PermissionHealthTest {
         assertEquals(PermissionGap.OVERLAY, broken.firstMissing)
     }
 
+    @Test
+    fun `the D52 state - the permission LIES and the window is refused - is not fully active`() {
+        // The MediaTek/Chinese-ROM case. Every permission query answers yes; the window still
+        // never appears. If canBlock trusted canDrawOverlays here, the Home banner would show
+        // green while the user scrolled past their limit unblocked — which is the D51 failure
+        // wearing a disguise.
+        val lying = health(runtimeDenied = true)
+        assertTrue("Android insists the permission is granted", lying.canDrawOverlays)
+        assertTrue("counting is unaffected", lying.canDetect)
+        assertFalse("but the window does not exist, so nothing can block", lying.canBlock)
+        assertFalse(lying.isFullyActive)
+        assertEquals(PermissionGap.OVERLAY_BLOCKED_BY_SYSTEM, lying.firstMissing)
+    }
+
+    @Test
+    fun `an actually-missing permission outranks an observed refusal`() {
+        // Both true means the permission is genuinely off and the refusal is merely its
+        // consequence — so the banner must say "grant it", not "your device is blocking us".
+        // Pointing a user at the harder explanation when the simple one applies wastes the one
+        // message they will read.
+        assertEquals(
+            PermissionGap.OVERLAY,
+            health(overlay = false, runtimeDenied = true).firstMissing,
+        )
+    }
+
+    @Test
+    fun `an observed refusal outranks a missing notification permission`() {
+        assertEquals(
+            PermissionGap.OVERLAY_BLOCKED_BY_SYSTEM,
+            health(notify = false, runtimeDenied = true).firstMissing,
+        )
+    }
+
     /* --- the truth table --------------------------------------------------------------- */
 
     @Test
-    fun `canBlock needs BOTH accessibility and overlay`() {
+    fun `canBlock needs accessibility, the permission, AND a window that actually appears`() {
         assertTrue(health().canBlock)
         assertFalse("no overlay window", health(overlay = false).canBlock)
         assertFalse("nothing is running", health(accessibility = false).canBlock)
+        assertFalse("the window was refused at runtime", health(runtimeDenied = true).canBlock)
         assertFalse(health(accessibility = false, overlay = false).canBlock)
     }
 
@@ -109,7 +145,12 @@ class PermissionHealthTest {
         // if this order is, and reordering the enum is a one-line edit that would silently point
         // the Fix button at the wrong screen.
         assertEquals(
-            listOf(PermissionGap.ACCESSIBILITY, PermissionGap.OVERLAY, PermissionGap.NOTIFICATIONS),
+            listOf(
+                PermissionGap.ACCESSIBILITY,
+                PermissionGap.OVERLAY,
+                PermissionGap.OVERLAY_BLOCKED_BY_SYSTEM,
+                PermissionGap.NOTIFICATIONS,
+            ),
             PermissionGap.entries.toList(),
         )
     }
@@ -118,19 +159,23 @@ class PermissionHealthTest {
 
     @Test
     fun `every combination is self-consistent`() {
-        // Cheap to enumerate all eight, and it catches a future field being added to one derived
-        // property but not another.
-        listOf(true, false).forEach { a ->
-            listOf(true, false).forEach { o ->
-                listOf(true, false).forEach { n ->
-                    val h = health(a, o, n)
-                    val label = "acc=$a overlay=$o notify=$n"
-                    assertEquals("$label: canBlock", a && o, h.canBlock)
-                    assertEquals("$label: isFullyActive", a && o, h.isFullyActive)
-                    assertEquals("$label: isHealthy", a && o && n, h.isHealthy)
-                    assertEquals("$label: banner shown", !(a && o && n), h.firstMissing != null)
-                    // A healthy app is never degraded, and a degraded one is never healthy.
-                    assertFalse("$label: healthy and degraded at once", h.isHealthy && h.isDegraded)
+        // Cheap to enumerate all sixteen, and it catches a future field being added to one derived
+        // property but not another — which is exactly the shape of the D52 edit.
+        val bools = listOf(true, false)
+        bools.forEach { a ->
+            bools.forEach { o ->
+                bools.forEach { n ->
+                    bools.forEach { denied ->
+                        val h = health(a, o, n, denied)
+                        val label = "acc=$a overlay=$o notify=$n denied=$denied"
+                        val blockable = a && o && !denied
+                        assertEquals("$label: canBlock", blockable, h.canBlock)
+                        assertEquals("$label: isFullyActive", blockable, h.isFullyActive)
+                        assertEquals("$label: isHealthy", blockable && n, h.isHealthy)
+                        assertEquals("$label: banner shown", !(blockable && n), h.firstMissing != null)
+                        // A healthy app is never degraded, and a degraded one is never healthy.
+                        assertFalse("$label: healthy and degraded", h.isHealthy && h.isDegraded)
+                    }
                 }
             }
         }

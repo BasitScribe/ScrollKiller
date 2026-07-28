@@ -2,14 +2,26 @@ package com.scrollkiller.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// The raw color palette. These values are referenced by Theme.kt and combined
-// into full Material3 color schemes. Placeholder colors from the standard
-// Compose template — real branding comes later.
+/*
+ * Compose-typed views of the palette. Every value comes from [Brand] — nothing is DEFINED here.
+ *
+ * This file used to hold the Compose template's Purple80 / PurpleGrey40 / Pink40 placeholders. They
+ * are gone (D58). If you are looking for where a brand colour is defined, it is Brand.kt, and that is
+ * deliberately the only place — the over-app surfaces cannot read a Compose theme, so the source has
+ * to be plain Kotlin that both render paths can consume.
+ */
 
-val Purple80 = Color(0xFFD0BCFF)
-val PurpleGrey80 = Color(0xFFCCC2DC)
-val Pink80 = Color(0xFFEFB8C8)
+val BrandCobalt = Color(Brand.COBALT)
+val BrandCobaltDeep = Color(Brand.COBALT_DEEP)
+val BrandCobaltSoft = Color(Brand.COBALT_SOFT)
 
-val Purple40 = Color(0xFF6650A4)
-val PurpleGrey40 = Color(0xFF625B71)
-val Pink40 = Color(0xFF7D5260)
+val BrandCoral = Color(Brand.CORAL)
+val BrandCoralDeep = Color(Brand.CORAL_DEEP)
+val BrandBrim = Color(Brand.BRIM)
+
+val BrandInk = Color(Brand.INK)
+val BrandCanvas = Color(Brand.CANVAS)
+val BrandCanvasDark = Color(Brand.CANVAS_DARK)
+
+val BrandOnLight = Color(Brand.ON_LIGHT)
+val BrandOnDark = Color(Brand.ON_DARK)

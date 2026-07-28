@@ -1,13 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
     Rounded pill background for the floating live-counter bubble. A vector shape (no
-    raster asset) keeps the overlay cheap. Semi-opaque dark fill so the mascot + count
-    stay legible over any reel; the fixed colors are intentional (the bubble draws
-    over other apps, not inside our theme).
+    raster asset) keeps the overlay cheap.
+
+    NO BRAND COLOURS LIVE HERE (D58). The fill is a placeholder that is immediately
+    replaced: BubbleView tints this drawable from Brand.STATE_* on every render
+    (mutate().setTint(...)), so whatever is written below never reaches the screen.
+    Brand.kt is the single source for both render paths — see its class doc for why
+    the over-app surfaces cannot read the Compose theme.
+
+    The radius mirrors Brand.RADIUS_PILL_DP; a shape drawable cannot read a Kotlin
+    constant, so keep the two in step if either changes.
 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <solid android:color="#E60D0D0D" />
+    <solid android:color="#FF000000" />
     <corners android:radius="24dp" />
     <stroke
         android:width="1dp"
