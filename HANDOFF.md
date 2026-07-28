@@ -7,7 +7,49 @@
 > for f in CLAUDE.md HANDOFF.md docs/*.md ScrollKiller/*.md; do echo "$(grep -c '^```' "$f") $f"; done
 > ```
 
-## ← CURRENT: the brand pass (D58)
+## ← CURRENT: the first CI run (3a)
+
+**Not on-device.** This is the first verification in this project that runs on a machine other than
+yours, which is the whole point of 3a — every green build before it was local, and that is exactly
+how ten source files stayed untracked for weeks while the build passed daily.
+
+`android.yml` and `backend.yml` trigger on **pull_request** and on push to **main** only, so pushing
+the branch alone does not run them (deliberate — running both on push *and* PR pays twice out of a
+2,000-minute private-repo budget, D68). `security.yml` has no path filter and no branch filter, so it
+should already have run on the branch push.
+
+### Run 1 — open the PR
+- [ ] Open `feat/3a-ci-baseline` → `main`: <https://github.com/BasitScribe/ScrollKiller/pull/new/feat/3a-ci-baseline>
+- [ ] Three checks appear: **android**, **backend**, **security**.
+
+### Run 2 — android.yml, the risky one
+Expect noise. It has never run.
+- [ ] **The daemon JVM pin is the predicted failure (D67).** `gradle/gradle-daemon-jvm.properties`
+      demands `vendor=jetbrains, version=21`; the runner has Temurin. If it fails, the error names a
+      toolchain/vendor mismatch. Work the ladder in D67 in order, and **do not relax the local pin**:
+      (1) foojay may auto-provision JBR and it just works; (2) `-Dorg.gradle.java.home=$JAVA_HOME`;
+      (3) a CI-only rewrite of the vendor line, never committed.
+- [ ] `./gradlew` executes at all — the exec bit was `100644` and is now `100755`. A
+      `Permission denied` here means the mode change did not survive.
+- [ ] 284 tests run and pass on the runner (same number as local).
+- [ ] `app-debug-apk` artifact is uploaded.
+- [ ] **Do NOT read a green `lintDebug` as the local lint error being fixed.** That error lives in
+      `local.properties`, which is gitignored and absent on a runner. Environment difference, not a fix.
+
+### Run 3 — backend.yml
+- [ ] `quality` green: ruff, ruff format, mypy --strict, 34 tests at 100% coverage.
+- [ ] `image` green, including the **non-root assert** (`id -u` must print `10001`).
+- [ ] Trivy: note whether the base image digest trips a HIGH/CRITICAL **with a fix available**. If it
+      does, the correct response is bumping the digest, not adding an ignore entry.
+- [ ] The SBOM artifact is attached to the run.
+
+### Run 4 — the budget guarantee (the check most likely to be silently wrong)
+- [ ] Push a **docs-only** commit to the branch. **Neither android nor backend may run.** `security`
+      should still run — it is unfiltered on purpose, because a secret can land in any file.
+
+---
+
+## Previous: the brand pass (D58)
 
 Visual only — no detection, block, challenge or count logic changed. Build green: **284 tests**,
 `assembleDebug` + `compileReleaseKotlin`. Audited: no brand ARGB literal survives outside `Brand.kt`.

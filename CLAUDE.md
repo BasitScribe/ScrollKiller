@@ -5,7 +5,7 @@ Anti-doomscroll app. Detects reel scrolling on-device, blocks at limits, unlocks
 ## Stack
 - Android: Kotlin, Jetpack Compose, AccessibilityService, Room, min SDK 26
 - iOS (later): SwiftUI + Shortcuts-automation interception; built via GitHub Actions macOS runner only (no local Mac)
-- Backend: Python 3.12, FastAPI, SQLAlchemy 2.x async, Postgres (Neon, pgbouncer), Upstash Redis, FCM
+- Backend: Python 3.13 (was 3.12 — D69), FastAPI, SQLAlchemy 2.x async, Postgres (Neon, pgbouncer), Upstash Redis + FCM **from Phase 4 only** (D66)
 - CI: GitHub Actions (primary). Ephemeral Jenkins/EC2 = learning track only, never blocks releases.
 - Cost constraint: ₹0 until Play Store ($25). Free tiers only. No paid services without explicit decision in DECISIONS.md.
 
@@ -34,5 +34,10 @@ One phase per session. Start: read **docs/PROJECT_MAP.md**, then ROADMAP current
 
 ## Conventions
 - Kotlin: package com.scrollkiller.*; ViewModel + Repository; no God-classes in the AccessibilityService — it only emits events.
-- Python: ruff + mypy, async everywhere, routers/ services/ models/ layout, pytest.
+- Python: ruff + mypy, async everywhere, routers/ services/ models/ layout, pytest. Gates live in
+  `backend/pyproject.toml`, never in the workflow, so local and CI read the same settings. All four
+  block: `ruff check`, `ruff format --check`, `mypy app`, `pytest` (100% coverage floor).
+- **`app/routers/health.py` must never reach the database** — liveness and readiness are separate
+  modules and a test walks the import graph to keep them that way (D60). Put DB work in
+  `readiness.py`.
 - Commits: conventional (feat:, fix:, chore:).
