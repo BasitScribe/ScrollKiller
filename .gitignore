@@ -46,6 +46,11 @@ htmlcov/
 .env.*
 !.env.example
 
+# Obsidian per-machine UI state. The vault's NOTES are tracked (D56 treats them as
+# part of the project); which panes you happen to have open is not.
+ScrollKiller/.obsidian/workspace.json
+ScrollKiller/.obsidian/workspace-mobile.json
+
 # Agent/session scratch
 .artifacts/
 
