@@ -10,9 +10,9 @@ import com.scrollkiller.service.Platform
 import com.scrollkiller.service.PlatformSpec
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -104,6 +104,14 @@ internal object TodayMerge {
         return TodaySummary(total = merged.values.sum(), perPlatform = merged)
     }
 }
+
+/**
+ * One platform's total across a date RANGE — the Insights per-app breakdown (D82).
+ *
+ * Distinct from [TodaySummary.perPlatform], which is a single day: this collapses the date
+ * dimension entirely, so it cannot be derived from the day map without walking every row.
+ */
+data class PlatformRangeTotal(val platform: Platform, val total: Int)
 
 /**
  * The single point between short-video detection and stored counts. Backed by Room, so
@@ -260,6 +268,88 @@ class CountRepository(
         observeTodaySummary().map { it.countFor(platform) }.distinctUntilChanged()
 
     /** Raw events since local midnight, newest first (recent detail, not history). */
+    /* --- RANGE reads for Insights (D82) ---------------------------------------------------
+     *
+     * Both count reads below fold in TODAY's value from [observeTodaySummary] rather than trusting
+     * the `daily_counts` row alone, and that is the point rather than a detail.
+     *
+     * Today's Room row lags the in-memory [pending] counts by a DB round trip (D39/D65), so a range
+     * query reading the table alone would draw a last bar one or two lower than the hero numeral the
+     * Today tab is showing at that same instant. Two surfaces disagreeing about today is exactly the
+     * defect D35 existed to kill, and it is MORE visible here, not less: the trend's final bar is one
+     * tab-switch from the number it has to match.
+     *
+     * Composing the existing today Flow instead of re-implementing the merge is what makes them
+     * agree BY CONSTRUCTION — there is one merge rule in this class and both paths run it.
+     */
+
+    /**
+     * Total per day across the inclusive range, keyed by ISO date. Days with no row are ABSENT
+     * rather than zero; [com.scrollkiller.stats.TrendBuckets] fills the gaps, because only the
+     * caller knows whether a missing day should be a zero bar or no bar at all.
+     *
+     * Today's entry is OVERRIDDEN with the merged value — exact, because the map is keyed by date
+     * so replacing one key cannot disturb the others.
+     */
+    fun observeDailyTotalsBetween(from: String, to: String): Flow<Map<String, Int>> {
+        val key = today()
+        return combine(
+            dao.observeDailyTotalsBetween(from, to),
+            observeTodaySummary(),
+        ) { rows, todaySummary ->
+            val out = rows.associate { it.date to it.total }.toMutableMap()
+            if (key in from..to) out[key] = todaySummary.total
+            out.toMap()
+        }.distinctUntilChanged()
+    }
+
+    /**
+     * Total per platform across the whole inclusive range, biggest first.
+     *
+     * The date dimension is collapsed here, so today cannot simply be overridden the way it is
+     * above — its Room contribution is already summed into each platform's figure and is not
+     * separable afterwards. So the QUERY is asked for the range up to YESTERDAY and today's merged
+     * per-platform counts are added on top. Subtracting an assumed Room value instead would double-
+     * count or under-count the moment the two disagreed, which is precisely when it matters.
+     *
+     * An inverted range (`from` after the adjusted `to`, i.e. the window is only today) returns no
+     * rows from SQLite, so it needs no special case.
+     */
+    fun observePlatformTotalsBetween(from: String, to: String): Flow<List<PlatformRangeTotal>> {
+        val key = today()
+        val includesToday = key in from..to
+        val daoTo = if (includesToday) LocalDate.parse(key).minusDays(1).toString() else to
+        return combine(
+            dao.observePlatformTotalsBetween(from, daoTo),
+            observeTodaySummary(),
+        ) { rows, todaySummary ->
+            val out = mutableMapOf<Platform, Int>()
+            rows.forEach { row ->
+                Platform.entries.firstOrNull { it.id == row.platform }
+                    ?.let { out[it] = (out[it] ?: 0) + row.total }
+            }
+            if (includesToday) {
+                todaySummary.perPlatform.forEach { (platform, count) ->
+                    out[platform] = (out[platform] ?: 0) + count
+                }
+            }
+            out.filterValues { it > 0 }
+                .map { (platform, total) -> PlatformRangeTotal(platform, total) }
+                .sortedByDescending { it.total }
+        }.distinctUntilChanged()
+    }
+
+    /** Session-derived seconds across the inclusive range (D80). 0 where nothing is rolled up yet. */
+    fun observeSecondsBetween(from: String, to: String): Flow<Long> =
+        minutesDao.observeTotalSecondsBetween(from, to).distinctUntilChanged()
+
+    /**
+     * Earliest day carrying a time rollup, or null. Lets Insights state what its time figure is
+     * measured FROM rather than presenting a partial sum as a whole-range total — D80's ramp.
+     */
+    fun observeEarliestRolledDate(): Flow<String?> =
+        minutesDao.observeEarliestRolledDate().distinctUntilChanged()
+
     suspend fun getScrollsToday(): List<ScrollEvent> = eventDao.getScrollsSince(startOfTodayMs())
 
     /** Raw events for one platform, newest first. */

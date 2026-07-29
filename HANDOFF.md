@@ -25,6 +25,30 @@ restored reprieve (new Run H).
 The block itself is proven, so a failure in these runs is a YouTube or a reprieve problem — it is no
 longer confounded by the block failing to draw at all.
 
+### Run O — the Insights screen (D82)
+- [ ] The bottom nav reads **Today / Insights / Settings**. Apps is gone; its today-only bars live
+      on Today's "By app" card, so check nothing you relied on disappeared.
+- [ ] **7 days**: seven bars, one per day, oldest left. A day you did not scroll is a **hairline**,
+      not a gap — the axis must not silently compress.
+- [ ] The **limit line** is visible even when every bar is well under it. If it vanishes when you
+      are doing well, the plot is scaling to the bars instead of to `max(bar, limit)`.
+- [ ] A day over the limit is **orange**; **today is coral**. Confirm at a glance, without reading
+      numbers.
+- [ ] **CRITICAL — today's bar equals the Today tab's number.** Scroll a few reels, then switch
+      Today ⇄ Insights repeatedly. They must never disagree, even for a moment. A lower final bar
+      means the pending merge was bypassed (D35's defect class).
+- [ ] **Weekly**: about five bars. The last is labelled **"This week so far"** and is expected to be
+      shorter — that label is the whole point; without it a Tuesday reads as a collapse.
+- [ ] Only the LAST bar is partial. The first bar must be a full week, never a stub.
+- [ ] **Streak tiles**: cross your limit today → current streak drops to **0** immediately, and
+      **best** does not change. Stay under tomorrow → current becomes 1.
+- [ ] **Time tile**: shows a measured figure, with the caption "Time measured since …" while the
+      rollup is younger than the window. The caption should DISAPPEAR once rollups cover the whole
+      range (about a month out).
+- [ ] Switching 7 days ⇄ Weekly is instant and does not jank. No stutter while scrolling the screen.
+- [ ] **Empty state**: on a fresh install (or after Clear all data) Insights reads "Nothing to chart
+      yet" — no error colour, no empty chart frame.
+
 ### Run M — the DB v4 upgrade does not lose data (D80)
 **This is the only run that matters this pass, and it CANNOT be tested by a fresh install** — a
 migration mismatch throws on the UPGRADE launch only. `MigrationSqlTest` guards the SQL text at

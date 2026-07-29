@@ -20,7 +20,7 @@ reading them, that is a defect in *this file* — fix it here rather than openin
 
 | Don't | Instead |
 |---|---|
-| `DECISIONS.md` end to end (~232 KB, 81 ADRs) | The topic table below → read the 2–3 named `Dn` |
+| `DECISIONS.md` end to end (~238 KB, 82 ADRs) | The topic table below → read the 2–3 named `Dn` |
 | `ROADMAP.md`'s status log (historical, append-only) | The `← CURRENT` phase section only |
 | `HANDOFF.md` end to end (superseded runs are kept) | The `← CURRENT` block only |
 | Re-reading an ADR you already know is settled | Trust this file's one-line summary unless the task *changes* that area |
@@ -43,7 +43,7 @@ for f in CLAUDE.md HANDOFF.md docs/*.md ScrollKiller/*.md; do echo "$(grep -c '^
 | [../CLAUDE.md](../CLAUDE.md) | Invariants (the 6 non-negotiables), stack, conventions, session protocol | **Always, first.** It is short and it overrides everything |
 | **this file** | Project audit, phase status, package map, per-area summaries | **Always, second.** Orient here before opening anything else |
 | [ROADMAP.md](ROADMAP.md) | Phases, checkboxes, and an append-only session log | You need the CURRENT phase's open items. **Read the `← CURRENT` section only** — the status log is long and historical |
-| [DECISIONS.md](DECISIONS.md) | ADRs **D1…D81** (~232 KB), append-only, with a complete **77-line title index** at the top (77 = D1–D81 minus D61–D64, reserved) | You need *why* something is the way it is. **Never open this file whole — it is the single biggest token sink in the repo.** Use the topic table below to get candidate `Dn`s, then read only those. D55+ titles are greppable via `^\*\*D` |
+| [DECISIONS.md](DECISIONS.md) | ADRs **D1…D82** (~238 KB), append-only, with a complete **78-line title index** at the top (78 = D1–D82 minus D61–D64, reserved) | You need *why* something is the way it is. **Never open this file whole — it is the single biggest token sink in the repo.** Use the topic table below to get candidate `Dn`s, then read only those. D55+ titles are greppable via `^\*\*D` |
 | [../HANDOFF.md](../HANDOFF.md) | Manual on-device checklists, newest first | You are writing or running device verification. Only the `← CURRENT` block is live |
 | [SCHEMA.md](SCHEMA.md) | Server tables + sync flow | Phase 3+ backend work. Nothing in the app reads this yet |
 | [STORE_COPY.md](STORE_COPY.md) | Claims the Play listing may **not** make | Before writing any user-facing marketing copy, or pre-submission |
@@ -72,7 +72,7 @@ the markdown links do not already provide.
 
 ## Find the ADR without opening DECISIONS.md
 
-**This table is the point of this file.** `DECISIONS.md` is ~232 KB across 81 ADRs; loading it to
+**This table is the point of this file.** `DECISIONS.md` is ~238 KB across 82 ADRs; loading it to
 answer one "why" question is the most expensive mistake available in this repo. Look the topic up
 here, then read **only** the two or three `Dn` it names. Bold = the current, load-bearing decision
 for that area; the others are the history that led to it and are usually *not* worth re-reading.
@@ -99,7 +99,7 @@ for that area; the others are the history that led to it and are usually *not* w
 
 *(D61–D64 are reserved placeholders, deliberately unwritten — see D60's closing note.)*
 
-**Index is complete through D81** — 77 entries = D1–D81 minus the four reserved.
+**Index is complete through D82** — 78 entries = D1–D82 minus the four reserved.
 
 ---
 
@@ -377,7 +377,10 @@ state, not a bug; the test says so and names what to do when the next strategy i
 - `onResume` re-check; skip overlay + welcome-seen both persisted
 
 #### Dashboard (Compose Material3)
-- Tabs: **Today** (mascot + total + time + guilt + permission banner) / **Apps** / **Settings**
+- Tabs: **Today** (mascot + total + time + guilt + permission banner) / **Insights** (D82) / **Settings**
+- **Insights** replaced Apps (D82) — Apps was today-only and duplicated Today's "By app" card.
+  `InsightsViewModel` produces ONE immutable state per emission; bars are weighted `Box`es, not a
+  `Canvas`; today's bar composes `observeTodaySummary()` so it cannot disagree with the Today tab
 - **Empty states** (D78) on Today's breakdown card and the whole Apps tab. Tone rule: nothing
   counted is this app's BEST outcome, so they must not look like failure — hairline, no accent, no
   apology

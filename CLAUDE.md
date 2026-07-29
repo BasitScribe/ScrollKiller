@@ -25,7 +25,7 @@ Read docs/architecture.mermaid — full component graph. Summary: device is sour
 - docs/architecture.mermaid — system graph
 - docs/SCHEMA.md — DB tables + sync flow
 - docs/ROADMAP.md — phases, current status (status log is huge — prefer PROJECT_MAP + the CURRENT phase section)
-- docs/DECISIONS.md — why-log (append-only ADRs, D1–D81, ~232 KB). **Never open whole — it is the biggest token sink here.** Use PROJECT_MAP's topic→ADR table to get candidate Dn, then read only those
+- docs/DECISIONS.md — why-log (append-only ADRs, D1–D82, ~238 KB). **Never open whole — it is the biggest token sink here.** Use PROJECT_MAP's topic→ADR table to get candidate Dn, then read only those
 - docs/STORE_COPY.md — claims the listing may NOT make, and why (gate before Play submission)
 - HANDOFF.md — current on-device checklist only when verifying or writing device steps
 

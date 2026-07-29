@@ -23,4 +23,22 @@ object TimeEstimate {
         val tenths = Math.round(minutes(count, secondsPerItem) * 10.0)
         return "${tenths / 10}.${tenths % 10}"
     }
+
+    /**
+     * MEASURED seconds as a compact label — "48m" under an hour, "3.1h" above (D82).
+     *
+     * Takes SECONDS, not a count, because this renders the session-derived figure from
+     * `daily_minutes` (D80) rather than a flat count estimate. The two must never be formatted by
+     * the same call: one is measured and one is inferred, and passing a count here would silently
+     * present a guess in the slot reserved for a measurement.
+     *
+     * Locale-independent arithmetic, same as [minutesLabel].
+     */
+    fun hoursLabel(seconds: Long): String {
+        if (seconds <= 0) return "0m"
+        val totalMinutes = seconds / 60
+        if (totalMinutes < 60) return "${totalMinutes}m"
+        val tenths = Math.round(totalMinutes * 10.0 / 60.0)
+        return "${tenths / 10}.${tenths % 10}h"
+    }
 }

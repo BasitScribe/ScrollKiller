@@ -66,6 +66,29 @@
     <string name="today_time_estimate">~%1$s mins scrolling today</string>
     <string name="today_breakdown_title">By app</string>
 
+    <!-- Insights tab (D82). Replaces the old Apps tab, whose per-app bars were today-only and
+         already duplicated by the Today tab's "By app" card; this adds the range dimension. -->
+    <string name="tab_insights">Insights</string>
+    <string name="insights_range_week">7 days</string>
+    <string name="insights_range_month">Weekly</string>
+    <!-- %1$d is the range total. The noun is deliberately generic: the total spans platforms that
+         count "reels", "shorts" and "snaps" (same rule as the bubble panel and the limit slider). -->
+    <string name="insights_total">%1$d short videos</string>
+    <string name="insights_daily_average">%1$d/day avg</string>
+    <string name="insights_limit_line">limit %1$d</string>
+    <string name="insights_streak_current">day streak</string>
+    <string name="insights_streak_best">best</string>
+    <string name="insights_time_measured">measured</string>
+    <!-- The D80 ramp, said out loud. Shown ONLY when the time figure covers less of the range than
+         the counts do, so it never appears once the rollup has caught up. %1$s is a date. -->
+    <string name="insights_time_from">Time measured since %1$s · earlier days show counts only</string>
+    <string name="insights_time_none">Time starts being measured today · counts go back further</string>
+    <!-- The in-progress bucket. Without this an incomplete week reads as a collapse in usage. -->
+    <string name="insights_partial_week">This week so far</string>
+    <string name="insights_by_app">By app</string>
+    <string name="insights_empty_title">Nothing to chart yet</string>
+    <string name="insights_empty_body">Once you scroll a tracked app, your daily totals and streaks show up here.</string>
+
     <!-- Apps tab. -->
     <string name="apps_title">Apps</string>
 

@@ -83,7 +83,14 @@ import com.scrollkiller.ui.theme.Brand
  */
 private enum class DashboardTab(val labelRes: Int, @DrawableRes val icon: Int) {
     TODAY(R.string.tab_today, R.drawable.mascot_head),
-    APPS(R.string.tab_apps, R.drawable.ic_nav_apps),
+
+    /**
+     * Was APPS (D82). The old tab showed per-platform bars for TODAY only — the same data the
+     * Today tab's "By app" card already carries — so it and Insights would have been two tabs of
+     * near-identical bars differing only in time window. Insights supersedes it by adding the range
+     * dimension; nothing was lost. The icon is reused: it still means "the breakdown by app".
+     */
+    INSIGHTS(R.string.tab_insights, R.drawable.ic_nav_apps),
     SETTINGS(R.string.tab_settings, R.drawable.ic_nav_settings),
 }
 
@@ -97,6 +104,7 @@ private enum class DashboardTab(val labelRes: Int, @DrawableRes val icon: Int) {
 @Composable
 fun DashboardScreen(
     viewModel: DashboardViewModel,
+    insightsViewModel: InsightsViewModel,
     accessibilityEnabled: Boolean,
     canDrawOverlays: Boolean,
     onOpenAccessibilitySettings: () -> Unit,
@@ -147,7 +155,14 @@ fun DashboardScreen(
     ) { padding ->
         when (tab) {
             DashboardTab.TODAY -> TodayTab(total, guiltLine, breakdown, health, padding)
-            DashboardTab.APPS -> AppsTab(breakdown, padding)
+            DashboardTab.INSIGHTS -> {
+                val insights by insightsViewModel.state.collectAsState()
+                InsightsTab(
+                    state = insights,
+                    onRangeChange = insightsViewModel::setRange,
+                    padding = padding,
+                )
+            }
             DashboardTab.SETTINGS -> SettingsTab(
                 accessibilityEnabled = accessibilityEnabled,
                 canDrawOverlays = canDrawOverlays,
@@ -318,40 +333,6 @@ private fun TodayTab(
 /* Apps                                                                                 */
 /* ----------------------------------------------------------------------------------- */
 
-@Composable
-private fun AppsTab(breakdown: List<PlatformCount>, padding: PaddingValues) {
-    // Magnitude comparison across a few fixed, directly-labeled bars → one recessive
-    // accent (identity is carried by the label, not the color); theme-aware for dark mode.
-    val max = (breakdown.maxOfOrNull { it.count } ?: 0).coerceAtLeast(1)
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(padding)
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        Text(
-            stringResource(R.string.apps_title),
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-        )
-        // A bare heading over nothing was the worst of the three empty screens, because this tab is
-        // ONLY the bars — with no data there was literally nothing below the title (D78).
-        if (breakdown.isEmpty()) {
-            EmptyState(body = stringResource(R.string.empty_apps_body))
-        }
-        breakdown.forEach { row ->
-            ScrollBar(
-                label = row.displayName,
-                count = row.count,
-                unitNoun = row.unitNoun,
-                isBeta = row.isBeta,
-                fraction = row.count.toFloat() / max,
-            )
-        }
-    }
-}
 
 /** One labeled horizontal bar: name + count above, a rounded fill on a recessive track. */
 @Composable
@@ -750,7 +731,7 @@ private fun GuiltPackRow(selected: GuiltLocale, onPick: (GuiltLocale) -> Unit) {
  * and it must not out-shout the count it sits beside.
  */
 @Composable
-private fun BetaBadge() {
+internal fun BetaBadge() {
     Text(
         text = stringResource(R.string.badge_beta),
         style = MaterialTheme.typography.labelSmall,
