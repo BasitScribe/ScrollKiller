@@ -11,6 +11,6 @@
 # serving the same bytes for that version. A hash pin does not. Adding this once
 # the lockfile has drifted means auditing what already shipped (D60).
 
-fastapi==0.118.0
+fastapi==0.140.13
 pydantic-settings==2.6.1
 uvicorn[standard]==0.32.1
