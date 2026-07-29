@@ -10,8 +10,29 @@
 default.**
 
 That is the whole rule. Everything below tells you *which* doc a task needs so you open one instead
-of loading the set. If you find yourself reading DECISIONS.md end to end or the ROADMAP status log,
-stop — scan the ADR index or the current-phase section instead.
+of loading the set.
+
+**Budget.** These two files (~4 KB + ~20 KB) should be enough to orient completely: what phase we
+are in, what is open, where every area's code and reasoning lives. If you cannot start work after
+reading them, that is a defect in *this file* — fix it here rather than opening more docs.
+
+**Never load by default** — each of these is a large file that a task almost never needs whole:
+
+| Don't | Instead |
+|---|---|
+| `DECISIONS.md` end to end (~205 KB, 75 ADRs) | The topic table below → read the 2–3 named `Dn` |
+| `ROADMAP.md`'s status log (historical, append-only) | The `← CURRENT` phase section only |
+| `HANDOFF.md` end to end (superseded runs are kept) | The `← CURRENT` block only |
+| Re-reading an ADR you already know is settled | Trust this file's one-line summary unless the task *changes* that area |
+
+**Before finishing any doc edit,** run the fence-balance check — an unclosed code fence does not
+fail a build, it silently swallows the rest of the vault's render (D56). Beware bare mid-line
+triple-backticks in prose too: they open an inline code span that eats everything up to the next
+backtick run. Every count must be **EVEN**:
+
+```
+for f in CLAUDE.md HANDOFF.md docs/*.md ScrollKiller/*.md; do echo "$(grep -c '^```' "$f") $f"; done
+```
 
 ---
 
@@ -22,7 +43,7 @@ stop — scan the ADR index or the current-phase section instead.
 | [../CLAUDE.md](../CLAUDE.md) | Invariants (the 6 non-negotiables), stack, conventions, session protocol | **Always, first.** It is short and it overrides everything |
 | **this file** | Project audit, phase status, package map, per-area summaries | **Always, second.** Orient here before opening anything else |
 | [ROADMAP.md](ROADMAP.md) | Phases, checkboxes, and an append-only session log | You need the CURRENT phase's open items. **Read the `← CURRENT` section only** — the status log is long and historical |
-| [DECISIONS.md](DECISIONS.md) | ADRs D1…D58, append-only, with a 58-line title index at the top | You need *why* something is the way it is. **Scan the index, then open the one Dn** — never the whole file. D55+ titles are greppable via `^\*\*D` |
+| [DECISIONS.md](DECISIONS.md) | ADRs **D1…D75** (~205 KB), append-only, with a complete **71-line title index** at the top (71 = D1–D75 minus D61–D64, reserved) | You need *why* something is the way it is. **Never open this file whole — it is the single biggest token sink in the repo.** Use the topic table below to get candidate `Dn`s, then read only those. D55+ titles are greppable via `^\*\*D` |
 | [../HANDOFF.md](../HANDOFF.md) | Manual on-device checklists, newest first | You are writing or running device verification. Only the `← CURRENT` block is live |
 | [SCHEMA.md](SCHEMA.md) | Server tables + sync flow | Phase 3+ backend work. Nothing in the app reads this yet |
 | [STORE_COPY.md](STORE_COPY.md) | Claims the Play listing may **not** make | Before writing any user-facing marketing copy, or pre-submission |
@@ -42,7 +63,38 @@ Topic notes as mermaid mindmaps, cross-linked with `[[wikilinks]]` for graph vie
 
 **Link policy:** `docs/` uses standard markdown links — Obsidian's graph view already includes
 relative markdown links, so the graph stays navigable *and* the links stay clickable on GitHub.
-`[[Wikilinks]]` are used inside `ScrollKiller/` only. See D56.
+`[[Wikilinks]]` are used inside `ScrollKiller/` only. See D56, re-affirmed 2026-07-29: switching
+`docs/` to wikilinks was considered and rejected again, because it would render every
+cross-reference as dead literal text for a PR reviewer on GitHub while buying no graph edge that
+the markdown links do not already provide.
+
+---
+
+## Find the ADR without opening DECISIONS.md
+
+**This table is the point of this file.** `DECISIONS.md` is ~205 KB across 75 ADRs; loading it to
+answer one "why" question is the most expensive mistake available in this repo. Look the topic up
+here, then read **only** the two or three `Dn` it names. Bold = the current, load-bearing decision
+for that area; the others are the history that led to it and are usually *not* worth re-reading.
+
+| Topic | ADRs | Current position in one line |
+|---|---|---|
+| Detection / advance signal | D11, D15, **D34** | IG = `DELTA_Y_FORWARD` (calibrated 49/50); YT = `IDENTITY_CHANGE` on channel handle |
+| Surface gating (Reels vs feed) | D24, D26, D27, D28 | `GatingMode`; IG `clips_viewer`, YT `reel_recycler`, both **ENFORCED** |
+| Platform maturity / eligibility | D32, D57, **D73** | `Maturity` BETA never blocks — *except* YT via the explicit `blocksWhileUncalibrated` override |
+| Overlay window / no-churn | D17, D29, **D30** | Attach once; hide = alpha 0 + `NOT_TOUCHABLE`, **never** root `GONE` |
+| Bubble content + panel | D35, **D37** | Compact = mascot + grand total; tap expands bars in place, same window |
+| Block window lifecycle | D49, D51, D52, D70, D71, **D72** | ⚑ **Read D72 first** — the premature attach check was the whole root cause; D52/D70's ROM attribution is withdrawn |
+| Block escapes / reprieves | D49, D50, D74, **D75** | Exit + Back always; two reprieves (5 min free, 15 min earned) pending a product call |
+| Challenges | D50, D53, D54, D55 | Suite complete 4/4, all device-verified; user picks, flat 15-min reward |
+| Guilt content | D9, **D33** | `assets/guilt_pack.json`, remote-shaped, weighted no-repeat rotation |
+| Mascot / brand | D36, D58, **D37** | One `MascotArt` mapping; art is **height**-bounded and not square |
+| Onboarding / permissions | D13, D16, D51, **D70** | Disclosure-first, then deep-link; overlay step is skippable. A permission *prediction* may never gate an attempt |
+| Data model / retention | D4, D14, **D65** | Aggregates forever, raw pruned 7d; displayed = server-acked + local unacked |
+| Backend / CI / infra | D6, D59, **D60**, D66, D67, D68, D69 | Monorepo, path-filtered CI; security baseline before endpoint 1; Redis/FCM are Phase 4 |
+| Docs & vault conventions | **D56** | Index-first; markdown links in `docs/`, wikilinks in the vault |
+
+*(D61–D64 are reserved placeholders, deliberately unwritten — see D60's closing note.)*
 
 ---
 

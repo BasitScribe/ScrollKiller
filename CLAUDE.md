@@ -25,12 +25,14 @@ Read docs/architecture.mermaid — full component graph. Summary: device is sour
 - docs/architecture.mermaid — system graph
 - docs/SCHEMA.md — DB tables + sync flow
 - docs/ROADMAP.md — phases, current status (status log is huge — prefer PROJECT_MAP + the CURRENT phase section)
-- docs/DECISIONS.md — why-log (append-only ADRs); open the specific Dn, not the whole file
+- docs/DECISIONS.md — why-log (append-only ADRs, D1–D75, ~205 KB). **Never open whole — it is the biggest token sink here.** Use PROJECT_MAP's topic→ADR table to get candidate Dn, then read only those
 - docs/STORE_COPY.md — claims the listing may NOT make, and why (gate before Play submission)
 - HANDOFF.md — current on-device checklist only when verifying or writing device steps
 
 ## Session protocol
 One phase per session. Start: read **docs/PROJECT_MAP.md**, then ROADMAP current phase only. End: update ROADMAP status + PROJECT_MAP audit bullets + append any new decision to DECISIONS.md. /clear between phases.
+
+**Session hygiene (token discipline — the standing rule is fewest tokens, app still working):** read only what the task needs — CLAUDE.md + PROJECT_MAP should be enough to orient, and anything beyond that should be a deliberate choice, not a sweep; don't re-read settled ADRs unless the task actually touches that area; end every session with the HANDOFF + ROADMAP update and a fence-balance check (an unclosed code fence silently swallows the rest of the vault's render — D56; the command is in PROJECT_MAP).
 
 ## Conventions
 - Kotlin: package com.scrollkiller.*; ViewModel + Repository; no God-classes in the AccessibilityService — it only emits events.

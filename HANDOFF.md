@@ -41,29 +41,90 @@ D74 deleted it; D75 put it back pending a product call. It has never been on a p
       not `done` means the handler is a no-op; a tap with no log at all means the touch never
       arrived. Those need opposite fixes (D71).
 
-### Run E — the YouTube limiter actually fires
-Set the YouTube limit low in Settings (the slider should now BE there — it appears automatically for
-any blocking platform).
-- [ ] **The YT slider exists in Settings.** If it does not, `blocksAtLimit` is false and nothing
-      below can pass.
-- [ ] Open Shorts and scroll past the limit → **the block covers Shorts**. Note the count it fired
-      at versus the limit you set; a few either way is the known, accepted D73 error bar, but write
-      the numbers down — they are the calibration data D57 has been waiting four sessions for.
+### Run E — the YouTube limiter actually fires (D73)
+YT counting is already proven accurate (5 distinct channels counted, idle and likes ignored). This
+run is about **the block**, which has never been on a phone for YouTube.
+
+**Build:** a **debug** build (`assembleDebug`). The `YTPROBE` lines below are `BuildConfig.DEBUG`-only
+and are the evidence for the surface half of this run.
+
+**Setup — do these in order, or the run is not deterministic:**
+1. Settings → **Clear all data**. This zeroes today's counts *and* any grace deadline left over
+   from a snooze or a completed challenge — a live grace silently suppresses the block and would
+   read as "the limiter is broken".
+2. Settings → **YouTube Shorts limit → 20**. That is `MIN_DAILY_LIMIT`, the lowest the slider goes
+   (range 20–300, step 10), so it is the fastest honest crossing available.
+3. Start the log:
+   ```
+   adb logcat -c ; adb logcat -s ScrollKiller
+   ```
+
+**Then open Shorts and swipe. Confirm, in this order:**
+- [ ] **The YT slider exists in Settings at all.** If it does not, `blocksAtLimit` is false for
+      YouTube and nothing below can pass — stop and report that.
+- [ ] **Counting on the Shorts surface.** Swiping produces lines carrying **both** of these:
+      ```
+      YTPROBE type=CONTENT_CHANGED ... ytCounted=<n> branch=identity-counted ... marker=MATCH(reel_recycler)
+      ```
+      `branch=identity-counted` is the count; `marker=MATCH(reel_recycler)` is the surface. If you
+      see counting with `marker=NO_MATCH`, the gating is wrong — **stop, that is the mis-gate this
+      run exists to catch.**
+- [ ] **The block attempt fires at the limit, on YouTube, against YouTube's own count:**
+      ```
+      block: attempt at 20/20 on YOUTUBE → PENDING_ATTACH
+      ```
+      The two numbers are `YT count / YT limit`. If the left number is the grand total across
+      platforms rather than YouTube's own, that is a per-platform regression — report it.
+- [ ] **The block actually draws:**
+      ```
+      block: SHOWN on YOUTUBE via=listener (focused=true bubbleAttached=...)
+      ```
+      `via=listener` is the expected path per D72; `via=next-frame` is equally healthy.
+      `via=deadline` means the attach was slow — note it, it is worth knowing. A
+      `no-attach-by-deadline` line instead means a genuine refusal, which after D72 would be new.
+- [ ] **The block visibly covers the Shorts player**, and it is ScrollKiller's own screen (dark ink
+      ground, "Reels are Locked", Exit loudest).
+- [ ] **Write down the count it fired at versus 20.** A few either way is D73's accepted error bar,
+      but these numbers are the calibration data D57 has been waiting five sessions for.
+- [ ] **Exit works**, and re-entering Shorts while still over the limit **re-blocks** (expect a
+      second `block: SHOWN on YOUTUBE`, which is correct re-fire, not churn — D72).
 - [ ] The **Beta badge is still on YouTube** in the Apps tab. It must not have disappeared: the
-      count is still uncalibrated and D73 turns on nothing but eligibility.
-- [ ] **ReVanced too, if installed** (`app.revanced.android.youtube`) — same spec, same markers, and
-      its Shorts markers have never been separately toured, so this is the one that might miss.
+      count is still uncalibrated and D73 turns on eligibility and nothing else.
 - [ ] **Instagram still blocks exactly as before.** YT joining must not have moved IG's behaviour.
+- [ ] **ReVanced too, if installed** (`app.revanced.android.youtube`) — same spec, same markers,
+      never separately toured, so this is the likeliest miss.
 
 ### Run F — the limiter does NOT fire where it must not
-This is the half that matters more, because D73 let an uncalibrated count cover a screen.
-- [ ] YouTube **home/subscriptions feed**, scrolled well past the limit → **no block, no count**.
-      The feed carries a Shorts SHELF and this is the exact false-match D28 dropped the `shorts_*`
-      guesses to avoid. A block here is a P0-adjacent bug: report it and stop.
-- [ ] YouTube **search results / a normal (non-Shorts) video / comments** → no block.
-- [ ] TikTok and Snapchat past their limits → **no block** (they stay BETA with no override).
+**This is the half that matters more**, because D73 lets an *uncalibrated* count cover a screen. A
+block over the wrong YouTube surface is a P0-adjacent bug.
 
-### Run G — "5 more minutes" is gone, and nothing went with it
+**What the code guarantees, so you know what you are testing.** YouTube's doom surface is set in
+exactly one place, `onSurfaceEvent`, and both call sites are behind a marker match — the
+content-changed path returns early unless `reel_recycler` matched, and the scroll path is wrapped in
+`if (markerMatched)`. The block only renders while on-surface. So a block on the home feed should be
+*structurally impossible*; this run is checking that the marker itself does not appear somewhere
+unexpected.
+
+Keep the limit at 20 and the count above it, so the block is armed the whole time.
+- [ ] **YouTube home / subscriptions feed**, scrolled well past a **Shorts shelf** → **no block, and
+      no new count**. This is the exact false-match D28 dropped the `shorts_*` guesses to avoid.
+      Expect `marker=NO_MATCH` on any `YTPROBE` lines, and **no** `block: attempt ... on YOUTUBE`
+      line at all. A block here: **stop and report.**
+- [ ] **Search results** (`results`) and **browse** (`browse_fragment`) → no block, `NO_MATCH`.
+- [ ] A **normal, non-Shorts video** and its **comments** → no block.
+- [ ] **The 3-second hysteresis edge.** From a blocked-and-exited state, leave Shorts and land on
+      the home feed *fast* (Back, immediately). The surface is held for `SURFACE_HYSTERESIS_MS`
+      (3s) after the last matching event, so this is the one window where a stale surface could let
+      a block draw over the feed. Nothing should appear. If something does, note **how fast** you
+      left — that is the whole diagnostic.
+- [ ] **TikTok and Snapchat past their limits → no block.** They stay BETA with no
+      `blocksWhileUncalibrated` override, and a test forbids that override on a SHADOW platform.
+- [ ] Bubble behaviour is unchanged throughout: it shows on Shorts, hides off it.
+
+### ~~Run G — "5 more minutes" is gone, and nothing went with it~~ — SUPERSEDED by Run H (D75)
+**Do not run G.** D75 restored the snooze, so its first check ("no third button") is now inverted
+and would fail correctly. The Exit / Back / challenge checks below are still worth doing and are
+carried into Run H. Kept for the record only.
 - [ ] The block panel shows **Exit** and **"Earn your way out — 15 minutes"**, and **no third
       button**. No gap, no stray outline where it used to be.
 - [ ] **Exit still works** from the block, the chooser and a running challenge.
