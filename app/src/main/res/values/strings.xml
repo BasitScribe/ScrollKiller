@@ -15,7 +15,7 @@
         block over a short-video feed once you pass your own daily limit, so blocking is stated
         here, in the system-facing description, and not only in the in-app disclosure dialog.
     -->
-    <string name="accessibility_service_description">Counts how many reels/short videos you scroll so ScrollKiller can show your daily total, and — once you pass the daily limit you set — shows a full-screen block over that app so you can stop. You can always leave the block, and you can always ask for a few more minutes. It reads only scroll events in short-video feeds and which app is currently in the foreground (so the counter bubble and the block can appear over that app and go away when you leave it) — never the videos, captions, messages, or anything you view. Nothing you look at ever leaves your phone.</string>
+    <string name="accessibility_service_description">Counts how many reels/short videos you scroll so ScrollKiller can show your daily total, and — once you pass the daily limit you set — shows a full-screen block over that app so you can stop. You can always leave the block. It reads only scroll events in short-video feeds and which app is currently in the foreground (so the counter bubble and the block can appear over that app and go away when you leave it) — never the videos, captions, messages, or anything you view. Nothing you look at ever leaves your phone.</string>
 
     <!-- Disclosure screen (shown BEFORE we send the user to Settings — invariant #5). -->
     <string name="disclosure_title">One permission to count your scrolling</string>
@@ -54,10 +54,15 @@
     <string name="settings_overlay_title">Display over other apps</string>
     <string name="settings_bubble_title">Floating counter bubble</string>
     <string name="settings_bubble_subtitle">Show your live count over reels while you scroll</string>
-    <!-- Daily limit slider (D49). One row per platform cleared to block — Instagram only today,
-         so the platform NAME is a format arg rather than baked into the copy. -->
-    <string name="settings_limit_title">Daily limit — %1$s</string>
-    <string name="settings_limit_subtitle">Block after %1$d %2$ss a day</string>
+    <!-- Daily limit slider (D76, superseding D49's one-row-per-platform). ONE budget across every
+         blocking app combined, so there is no platform name to interpolate any more. No unit noun
+         either: the total spans platforms that count "reels", "shorts" and "snaps", so naming one
+         would be wrong — "short videos" is the honest collective term.
+         settings_limit_covers names which apps are in the budget; %1$s is a " · "-joined list
+         built from blocksAtLimit, never hardcoded, so it cannot claim an app it does not enforce. -->
+    <string name="settings_limit_title">Daily scroll limit</string>
+    <string name="settings_limit_subtitle">Block after %1$d short videos a day, across all apps</string>
+    <string name="settings_limit_covers">Counts: %1$s</string>
     <!-- Motion access (D50). Shown only on devices that actually have a step sensor: asking for
          a permission that would unlock nothing is worse than staying quiet. -->
     <string name="settings_motion_title">Motion &amp; step access</string>
@@ -126,16 +131,17 @@
     <!-- Full-screen block screen (Phase 2). Clearly ScrollKiller's own UI. -->
     <string name="block_title">Reels are Locked</string>
     <string name="block_exit">Exit</string>
-    <!-- RESTORED at D75 after D74 deleted it. Formatted from BlockLimits.GRACE_MINUTES in
-         BlockScreenController, never hardcoded, so the promise on the button cannot drift from the
-         reprieve the policy actually grants. Restored WITH its button and handler in the same
-         change — the D74 note was right that a string with no control is invisible and a control
-         with no handler is worse, so the three move together in both directions. -->
-    <string name="block_snooze">%1$d more minutes</string>
+    <!-- block_snooze ("%1$d more minutes") is DELETED at D77 — STRICT MODE. It was removed at
+         D74, restored at D75 pending a product call, and that call is now made: challenge or exit,
+         no free bail. Do not re-add the string alone; a translated string with no control is
+         invisible and a control with no handler is worse, so string/button/handler move together.
 
-    <!-- Physical unlock challenges (D50). The block-panel button names its REWARD, because the
-         design rests on the user choosing the harder path knowingly: a small free thing next to a
-         larger earned one, side by side. It no longer names a specific challenge — the user picks
+         Invariant 6 is untouched by this and always was: a snooze deferred the block and kept the
+         user IN the app. Exit and hardware Back are what invariant 6 names, and both remain on
+         every panel — including on a device where no challenge is available at all. -->
+
+    <!-- Physical unlock challenges (D50). The block-panel button names its REWARD. Since D77 it is
+         the ONLY reprieve on the screen. It no longer names a specific challenge — the user picks
          one on the chooser (D53) — so the cost is named per option there instead.
          Minutes is a format arg from BlockLimits.CHALLENGE_GRACE_MINUTES, never written as copy. -->
     <string name="block_challenge">Earn your way out — %1$d minutes</string>

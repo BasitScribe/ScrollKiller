@@ -62,10 +62,12 @@ import kotlin.math.abs
  * total above them ([BubbleBreakdown] derives the shares from that same total). The brain state
  * follows the TOTAL for the same reason.
  *
- * The block, in contrast, still keys off the CURRENT platform's count against that platform's
- * limit ([TodaySummary.countFor]) — limits are per-platform (the user's, from
- * [SettingsPrefs.dailyLimit], defaulting to [PlatformSpec.dailyLimit]), and whether they should
- * become one shared budget is a product decision, not a rendering one.
+ * ## The limit is ONE budget across every blocking app (D76)
+ * That product question — should the per-platform limits become one shared budget — has been
+ * answered yes. The block now compares [BlockPolicy.blockingTotal] (today summed across every
+ * platform cleared to block) against a single user limit ([SettingsPrefs.dailyLimit]). WHERE it
+ * may draw stays per-platform ([PlatformSpec.blocksAtLimit] for the surface you are on), so
+ * spending the budget on Instagram can never put a block over a SHADOW app we do not trust.
  *
  * ## The block is live on Instagram (D49)
  * It was dormant from D19 until now because [PlatformSpec.blocksAtLimit] was false everywhere.
@@ -113,7 +115,6 @@ class OverlayController(
         BlockScreenController(
             context,
             onExit = ::onExit,
-            onSnooze = ::onSnooze,
             onOpenChooser = ::onOpenChooser,
             onChooseChallenge = ::onChooseChallenge,
             onCancelChallenge = ::onCancelChallenge,
@@ -161,8 +162,8 @@ class OverlayController(
     private var currentPlatform: Platform? = null
 
     /**
-     * Last summary seen, so [onSnooze], [onChallengeComplete] and [collapseNudge] can re-render
-     * without a new emission.
+     * Last summary seen, so [onChallengeComplete] and [collapseNudge] can re-render without a new
+     * emission.
      */
     private var lastSummary = TodaySummary.EMPTY
 
@@ -369,19 +370,30 @@ class OverlayController(
      * platform and a count we trust ([Maturity.STABLE]). Instagram is the only platform where
      * both hold today (D49); every other one is BETA and structurally cannot block.
      *
-     * The LIMIT is the user's ([SettingsPrefs.dailyLimit]), not the spec's — the spec's value is
-     * only the default that pref falls back to. Read per render rather than cached because the
-     * user can move the slider while the overlay is alive, and a limit that takes effect "next
-     * time you open Instagram" is a setting that looks broken.
+     * The LIMIT is the user's single global one ([SettingsPrefs.dailyLimit]), read per render
+     * rather than cached because the user can move the slider while the overlay is alive, and a
+     * limit that takes effect "next time you open Instagram" is a setting that looks broken.
+     *
+     * ## Two different questions, and only one of them is per-platform (D76)
+     * WHAT counts toward the limit is now GLOBAL: [BlockPolicy.blockingTotal] sums today across
+     * every platform cleared to block, so 60 reels then 45 Shorts is 105 against one budget
+     * instead of two separate scores that each blocked at neither. WHERE the block may draw is
+     * still per-platform: [PlatformSpec.blocksAtLimit] for the surface the user is standing on.
+     *
+     * Keeping them separate is the safety property. Spending the budget on Instagram must not let
+     * the block cover Snapchat — whose count is a known overcount (D32) and which is not cleared
+     * to block at all — so a user over the limit inside a SHADOW app sees the bubble, never the
+     * block.
      */
     private fun render(platform: Platform, summary: TodaySummary) {
         CountLatency.emitted()
         lastSummary = summary
         val spec = PlatformRegistry.specFor(platform)
-        // The BLOCK still asks a per-platform question (this platform's count vs ITS limit),
-        // even though the bubble displays the total — see the class doc.
-        val forLimit = summary.countFor(platform)
-        val limit = SettingsPrefs.dailyLimit(context, platform)
+        // ONE budget for the whole doomscrolling day, across every blocking platform (D76) —
+        // not this platform's own count, and not the bubble's grand total (which includes the
+        // SHADOW platforms we do not trust enough to enforce on).
+        val forLimit = BlockPolicy.blockingTotal(summary.perPlatform)
+        val limit = SettingsPrefs.dailyLimit(context)
         val overlay = BlockPolicy.overlayFor(
             count = forLimit,
             limit = limit,
@@ -604,8 +616,8 @@ class OverlayController(
 
     private fun hideBlock(reason: String = "unspecified") {
         GuiltLines.endBlockEpisode()
-        // Releases the step sensor. Routed through here rather than sprinkled across the exit,
-        // snooze and completion paths for the same reason endBlockEpisode is: a dismissal that
+        // Releases the step sensor. Routed through here rather than sprinkled across the exit and
+        // completion paths for the same reason endBlockEpisode is: a dismissal that
         // forgets leaves a sensor registered by a background service, which is a battery
         // complaint nobody ever traces back to us (D50).
         challenge.stop()
@@ -678,36 +690,14 @@ class OverlayController(
     }
 
     /**
-     * The free "5 more minutes" — grant the small, unearned reprieve. Restored at D75 after D74
-     * deleted it; see [BlockLimits.GRACE_MINUTES] for why it is here pending a product call.
+     * Challenge completed — grant the reprieve. **Since D77 this is the ONLY way to get one**: the
+     * free "5 more minutes" tap that used to share this persistence path is deleted, so the way
+     * past the block is earned or not taken (strict mode).
      *
-     * Shares [onChallengeComplete]'s persistence path exactly, differing only in the constant, so
-     * everything D49 established about a reprieve holds for both: PERSISTED (see
-     * [SettingsPrefs.graceUntilMs]) rather than held in memory, so it survives leaving Instagram and
-     * survives the service being restarted — a reprieve that a process death silently revokes is a
-     * promise broken at the worst possible moment.
-     */
-    private fun onSnooze() {
-        val platform = currentPlatform ?: return
-        SettingsPrefs.setGraceUntilMs(
-            context,
-            platform,
-            System.currentTimeMillis() + BlockLimits.GRACE_MS,
-        )
-        hideBlock("snooze")
-        render(platform, lastSummary)
-    }
-
-    /**
-     * Challenge completed — grant the EARNED reprieve.
-     *
-     * Deliberately a different, larger constant than [onSnooze]'s: granting the same as the free
-     * tap would make the challenge strictly dominated and the feature dead on arrival
-     * ([BlockLimits.CHALLENGE_GRACE_MINUTES] documents the inequality, and a test pins it).
-     *
-     * Same persistence path as the tap, so everything D49 established about a reprieve — it
-     * survives leaving Instagram, it survives a service restart, and it re-blocks on the next reel
-     * after it lapses — holds here unchanged.
+     * Everything D49 established about a reprieve still holds, because the mechanism is unchanged:
+     * the deadline is PERSISTED (see [SettingsPrefs.graceUntilMs]) rather than held in memory, so
+     * it survives leaving Instagram and survives the service being restarted — a reprieve that a
+     * process death silently revokes is a promise broken at the worst possible moment.
      *
      * Nothing schedules the re-block. There is no timer: the grace is a deadline the render path
      * already compares against on every count emission, so the next reel AFTER it expires blocks

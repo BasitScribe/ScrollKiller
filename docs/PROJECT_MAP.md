@@ -2,7 +2,7 @@
 
 > **Single entry point.** Living audit + index of every doc in the project. Pointers only — never a
 > dump of ROADMAP/DECISIONS.
-> Last audited: **2026-07-29** (Phase 2 · challenge suite COMPLETE 4/4 · brand pass done D58 · **YouTube NOW BLOCKS via the D73 override, reversing D57** · **"5 more minutes" RESTORED, D75 reverses D74** · **✅ BLOCK SAGA CLOSED — D72 device-confirmed: the premature `isAttachedToWindow` check was the whole root cause, the ROM never refused anything, and block + challenge + exit are verified live. Invariant 6 demonstrated, not argued. D52/D70's ROM attribution is corrected.** Still owed on device: YT calibration numbers (Run E) and the restored snooze (Run H)).
+> Last audited: **2026-07-29** (Phase 2 · challenge suite COMPLETE 4/4 · brand pass done D58 · **YouTube NOW BLOCKS via the D73 override, reversing D57** · **ONE global daily limit across all blocking apps, D76 superseding the per-platform sliders** · **STRICT MODE — the free "5 more minutes" is deleted for good, D77; a sensorless device gets Exit alone and `BlockEscapeTest` pins that it stays escapable** · **✅ BLOCK SAGA CLOSED — D72 device-confirmed: the premature `isAttachedToWindow` check was the whole root cause, the ROM never refused anything, and block + challenge + exit are verified live. Invariant 6 demonstrated, not argued. D52/D70's ROM attribution is corrected.** Owed on device: HANDOFF Runs E/F (YT block + mis-gate), I (unified limit + migration), J (strict mode + the sensorless case). **NEXT: the UI/UX appeal pass — planned, not yet built.**)
 
 ## Read order for a new session
 
@@ -20,7 +20,7 @@ reading them, that is a defect in *this file* — fix it here rather than openin
 
 | Don't | Instead |
 |---|---|
-| `DECISIONS.md` end to end (~205 KB, 75 ADRs) | The topic table below → read the 2–3 named `Dn` |
+| `DECISIONS.md` end to end (~215 KB, 77 ADRs) | The topic table below → read the 2–3 named `Dn` |
 | `ROADMAP.md`'s status log (historical, append-only) | The `← CURRENT` phase section only |
 | `HANDOFF.md` end to end (superseded runs are kept) | The `← CURRENT` block only |
 | Re-reading an ADR you already know is settled | Trust this file's one-line summary unless the task *changes* that area |
@@ -43,7 +43,7 @@ for f in CLAUDE.md HANDOFF.md docs/*.md ScrollKiller/*.md; do echo "$(grep -c '^
 | [../CLAUDE.md](../CLAUDE.md) | Invariants (the 6 non-negotiables), stack, conventions, session protocol | **Always, first.** It is short and it overrides everything |
 | **this file** | Project audit, phase status, package map, per-area summaries | **Always, second.** Orient here before opening anything else |
 | [ROADMAP.md](ROADMAP.md) | Phases, checkboxes, and an append-only session log | You need the CURRENT phase's open items. **Read the `← CURRENT` section only** — the status log is long and historical |
-| [DECISIONS.md](DECISIONS.md) | ADRs **D1…D75** (~205 KB), append-only, with a complete **71-line title index** at the top (71 = D1–D75 minus D61–D64, reserved) | You need *why* something is the way it is. **Never open this file whole — it is the single biggest token sink in the repo.** Use the topic table below to get candidate `Dn`s, then read only those. D55+ titles are greppable via `^\*\*D` |
+| [DECISIONS.md](DECISIONS.md) | ADRs **D1…D77** (~215 KB), append-only, with a complete **73-line title index** at the top (73 = D1–D77 minus D61–D64, reserved) | You need *why* something is the way it is. **Never open this file whole — it is the single biggest token sink in the repo.** Use the topic table below to get candidate `Dn`s, then read only those. D55+ titles are greppable via `^\*\*D` |
 | [../HANDOFF.md](../HANDOFF.md) | Manual on-device checklists, newest first | You are writing or running device verification. Only the `← CURRENT` block is live |
 | [SCHEMA.md](SCHEMA.md) | Server tables + sync flow | Phase 3+ backend work. Nothing in the app reads this yet |
 | [STORE_COPY.md](STORE_COPY.md) | Claims the Play listing may **not** make | Before writing any user-facing marketing copy, or pre-submission |
@@ -72,7 +72,7 @@ the markdown links do not already provide.
 
 ## Find the ADR without opening DECISIONS.md
 
-**This table is the point of this file.** `DECISIONS.md` is ~205 KB across 75 ADRs; loading it to
+**This table is the point of this file.** `DECISIONS.md` is ~215 KB across 77 ADRs; loading it to
 answer one "why" question is the most expensive mistake available in this repo. Look the topic up
 here, then read **only** the two or three `Dn` it names. Bold = the current, load-bearing decision
 for that area; the others are the history that led to it and are usually *not* worth re-reading.
@@ -82,10 +82,11 @@ for that area; the others are the history that led to it and are usually *not* w
 | Detection / advance signal | D11, D15, **D34** | IG = `DELTA_Y_FORWARD` (calibrated 49/50); YT = `IDENTITY_CHANGE` on channel handle |
 | Surface gating (Reels vs feed) | D24, D26, D27, D28 | `GatingMode`; IG `clips_viewer`, YT `reel_recycler`, both **ENFORCED** |
 | Platform maturity / eligibility | D32, D57, **D73** | `Maturity` BETA never blocks — *except* YT via the explicit `blocksWhileUncalibrated` override |
+| Daily limit | D19, D49, **D76** | ONE global limit across every blocking app. *What* counts is global (`BlockPolicy.blockingTotal`); *where* it may draw stays per-platform |
 | Overlay window / no-churn | D17, D29, **D30** | Attach once; hide = alpha 0 + `NOT_TOUCHABLE`, **never** root `GONE` |
 | Bubble content + panel | D35, **D37** | Compact = mascot + grand total; tap expands bars in place, same window |
 | Block window lifecycle | D49, D51, D52, D70, D71, **D72** | ⚑ **Read D72 first** — the premature attach check was the whole root cause; D52/D70's ROM attribution is withdrawn |
-| Block escapes / reprieves | D49, D50, D74, **D75** | Exit + Back always; two reprieves (5 min free, 15 min earned) pending a product call |
+| Block escapes / reprieves | D49, D50, D74, D75, **D77** | **STRICT MODE**: Exit + Back always, and ONE earned reprieve (15 min challenge). No free bail. Sensorless device = Exit alone, pinned by `BlockEscapeTest` |
 | Challenges | D50, D53, D54, D55 | Suite complete 4/4, all device-verified; user picks, flat 15-min reward |
 | Guilt content | D9, **D33** | `assets/guilt_pack.json`, remote-shaped, weighted no-repeat rotation |
 | Mascot / brand | D36, D58, **D37** | One `MascotArt` mapping; art is **height**-bounded and not square |
@@ -95,6 +96,8 @@ for that area; the others are the history that led to it and are usually *not* w
 | Docs & vault conventions | **D56** | Index-first; markdown links in `docs/`, wikilinks in the vault |
 
 *(D61–D64 are reserved placeholders, deliberately unwritten — see D60's closing note.)*
+
+**Index is complete through D77** — 73 entries = D1–D77 minus the four reserved.
 
 ---
 
@@ -267,7 +270,7 @@ mindmap
 - **THREE panels, one window** (D50/D53): `block_panel` / `chooser_panel` / `challenge_panel`; child swaps via one `showPanel` helper so "exactly one visible" cannot be broken piecemeal. Root never GONE (D30). **Each panel carries its own Exit, listed first** for TalkBack traversal — invariant 6
 
 #### BlockLimits
-- Default 100; slider 20–300 step 10; **two** reprieves since D75 — free tap **5** min, challenge **15** min (the inequality is asserted in `BlockLimitsTest`)
+- Default 100; slider 20–300 step 10. **ONE global limit** across all blocking apps (D76) — not one per platform. **ONE** reprieve since D77: challenge **15** min, no free tap
 - Retry cooldown 30s (`BlockRetryPolicy`)
 
 #### PermissionHealth (D51/D52, corrected by D70)

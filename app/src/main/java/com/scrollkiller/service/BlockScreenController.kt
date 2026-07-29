@@ -41,8 +41,6 @@ import com.scrollkiller.ui.theme.Brand
  * All methods run on the service main thread.
  *
  * @param onExit user chose to leave (Exit button or Back).
- * @param onSnooze user asked for [BlockLimits.GRACE_MINUTES] more minutes. Grants a timed
- *   reprieve. Deleted at D74 and restored at D75, pending a product call — see [BlockLimits].
  * @param onOpenChooser user asked to earn their way out (D50/D53). Opens the chooser; does NOT
  *   start anything. An ALTERNATIVE to Exit, never a replacement — every panel this class shows
  *   carries its own Exit.
@@ -62,7 +60,6 @@ import com.scrollkiller.ui.theme.Brand
 class BlockScreenController(
     private val context: Context,
     private val onExit: () -> Unit,
-    private val onSnooze: () -> Unit,
     private val onOpenChooser: () -> Unit,
     private val onChooseChallenge: (ChallengeSpec?) -> Unit,
     private val onCancelChallenge: () -> Unit,
@@ -314,11 +311,6 @@ class BlockScreenController(
         val root = LayoutInflater.from(context).inflate(R.layout.overlay_block, null) as BlockRootView
         styleFromBrand(root)   // the layout ships colourless; brand is applied here (D58)
         root.findViewById<TextView>(R.id.block_guilt).text = guiltLine
-        val snooze = root.findViewById<Button>(R.id.block_snooze)
-        // Formatted from the constant, never written as copy: the sentence the user reads and the
-        // reprieve they are granted are then the same number by construction (D49).
-        snooze.text = context.getString(R.string.block_snooze, BlockLimits.GRACE_MINUTES)
-        snooze.setOnClickListener(tapListener("snooze", onSnooze))
         root.findViewById<Button>(R.id.block_exit).setOnClickListener(tapListener("block.exit", onExit))
 
         // The physical unlock (D50/D53). Shown only when this device can run AT LEAST ONE challenge
@@ -738,10 +730,12 @@ class BlockScreenController(
      *  - **Exit** — highest contrast on the ink ground (near-white fill, ink text). Impossible to miss,
      *    and it is also the healthiest choice, which an anti-doomscroll app should be nudging toward.
      *  - **Earn your way out / chooser rows** — cobalt fill. Clearly actionable, clearly secondary.
-     *  - **"5 more minutes" / Back / Cancel** — the quietest: a ghost outline. The snooze is the
-     *    giving-in option, so it is deliberately the least celebrated thing on the screen — fully
-     *    available (never disabled, never hidden) and never sold. Back and Cancel are quiet for a
-     *    different reason: they return to a previous panel rather than resolving anything.
+     *  - **Back / Cancel** — the quietest: a ghost outline. They return to a previous panel rather
+     *    than resolving anything, so they stay fully available and uncelebrated.
+     *
+     * The ghost tier used to have a third member, the free "5 more minutes" button — the giving-in
+     * option, deliberately the quietest thing on the screen. It was removed at D77; what remains of
+     * that reasoning is that Exit stays loudest, which was never about the snooze.
      */
     private fun styleFromBrand(root: View) {
         root.setBackgroundColor(Brand.INK_BLOCK.toInt())
@@ -758,7 +752,7 @@ class BlockScreenController(
             stylePrimaryExit(root.findViewById(id))
         }
         styleSecondary(root.findViewById(R.id.block_challenge))
-        listOf(R.id.block_snooze, R.id.chooser_back, R.id.challenge_cancel).forEach { id ->
+        listOf(R.id.chooser_back, R.id.challenge_cancel).forEach { id ->
             styleGhost(root.findViewById(id))
         }
     }

@@ -20,12 +20,58 @@ Nothing below in the attach-timing section needs re-running unless a future chan
 `BlockScreenController.show`. What DOES remain open is the YouTube calibration (Run E) and the
 restored reprieve (new Run H).
 
-## ← CURRENT: YouTube limits + the restored "5 more minutes" (D73/D75)
+## ← CURRENT: the unified limit + strict mode (D76/D77), and the YouTube block (D73)
 
 The block itself is proven, so a failure in these runs is a YouTube or a reprieve problem — it is no
 longer confounded by the block failing to draw at all.
 
-### Run H — "5 more minutes" is back and works (D75)
+### Run I — the ONE daily limit (D76)
+Per-platform limits are gone. One slider, one budget, summed across every blocking app.
+- [ ] Settings shows **one** "Daily scroll limit" slider, not one per app. Under it, a
+      **"Counts: Instagram Reels · YouTube Shorts"** line naming exactly which apps are in the
+      budget.
+- [ ] **Upgrade migration.** On a build that already had per-platform limits set (e.g. IG 60,
+      YT 40), the new single limit reads **100** — the sum of what you actually chose, so your
+      ceiling is unchanged. If you had set only ONE slider, the limit is that value. If you never
+      touched them, it is 100 (the default). A limit that came out *lower* than the sum is the
+      migration bug to report — it would block you earlier than you ever asked for.
+- [ ] **The budget is shared.** Set the limit to 20. Scroll ~12 reels on Instagram, then switch to
+      YouTube Shorts and keep going. The block must fire on **Shorts** at a combined 20 — even
+      though neither app alone reached it. This is the whole point of D76 and the case the old
+      per-platform shape got wrong.
+- [ ] `block: attempt at 20/20 on YOUTUBE → …` — the left number is the COMBINED blocking total,
+      not YouTube's own count.
+- [ ] **SHADOW apps do not spend the budget.** With TikTok or Snapchat installed, scroll them a
+      lot. Their counts appear on the Today tab (correct) but must **not** move the number the
+      block fires at. If scrolling Snapchat pushes you into a block on Instagram, stop and report:
+      Snapchat is a known overcount (D32) and must never be able to cover a screen.
+- [ ] **A SHADOW app never gets blocked**, however far past the limit the total is — standing in
+      TikTok with the budget spent shows the bubble, never the block.
+
+### Run J — strict mode, and the sensorless device (D77)
+The free "5 more minutes" is gone for good. **This run is invariant 6, so treat any failure as a P0.**
+- [ ] The block panel shows **Exit** and **"Earn your way out — 15 minutes"**, and **no third
+      button**. No gap or stray outline where the snooze used to be.
+- [ ] **Exit works** from the block, the chooser and a running challenge.
+- [ ] **Hardware BACK works** from all three panels (routes through `BlockRootView.dispatchKeyEvent`,
+      so it must work whatever holds focus — try it after tabbing focus onto a button).
+- [ ] Complete a challenge → **15 minutes of quiet**, then the next reel blocks again. This is now
+      the only reprieve that exists, so if it broke, the way past the block is gone entirely.
+- [ ] **THE SENSORLESS CASE — the one that matters most.** On a device (or emulator) with no usable
+      challenge sensor, or with motion permission declined and no accelerometer/proximity fallback,
+      the block panel is **Exit alone**. Confirm that **Exit still leaves** and **Back still leaves**.
+      That is the strictest state the app can be in and the only control on the screen; if either
+      fails there, the block is a trap and that is a P0 against invariant 6.
+      *(`BlockEscapeTest` asserts this structurally against the layout on every build — this run is
+      the device half of the same claim.)*
+- [ ] Settings → Accessibility: the service description must **no longer** promise "you can always
+      ask for a few more minutes". It should read "You can always leave the block." A stale promise
+      here is a Play-policy claim about what the app does, not a copy nit.
+
+### ~~Run H — "5 more minutes" is back and works (D75)~~ — SUPERSEDED by Run J (D77)
+**Do not run H.** D77 deleted the snooze for good, so every check below is now inverted. Kept for
+the record only; the Exit/Back/challenge checks live in Run J.
+
 D74 deleted it; D75 put it back pending a product call. It has never been on a phone in either state.
 - [ ] The block panel shows **both** reprieves: "5 more minutes" (quiet ghost outline) and
       "Earn your way out — 15 minutes". Exit is still the loudest control on the screen.

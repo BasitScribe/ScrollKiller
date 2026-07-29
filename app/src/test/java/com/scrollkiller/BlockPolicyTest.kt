@@ -5,6 +5,8 @@ import com.scrollkiller.service.BlockPolicy
 import com.scrollkiller.service.PlatformRegistry
 import com.scrollkiller.service.SurfaceOverlay
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 
 /**
@@ -53,32 +55,69 @@ class BlockPolicyTest {
         )
     }
 
-    /* --- the limiter, per platform (D73) --------------------------------------------------- */
+    /* --- the ONE limiter, across all blocking platforms (D76) ------------------------------ */
 
     @Test
-    fun `every blocking platform's limiter fires at its own limit, on its own count`() {
-        // Written when YouTube became the second platform allowed to block (D73). The limiter is
-        // one shared function, so the risk in adding a platform was never the arithmetic — it was
-        // whether the OVERLAY hands it the right pair. OverlayController.render reads
-        // `summary.countFor(platform)` against `SettingsPrefs.dailyLimit(context, platform)`, and
-        // both are per-platform; this pins the consequence, which is that one platform's counts can
-        // never spend another's allowance.
-        //
-        // The arrangement below is the one that would catch the mistake: two platforms with
-        // DIFFERENT limits, each just under and just over its own.
-        PlatformRegistry.enabled.filter { it.blocksAtLimit }.forEach { spec ->
-            val own = spec.dailyLimit
-            assertEquals(
-                "${spec.platform} must not block one short of its own limit ($own)",
-                SurfaceOverlay.BUBBLE,
-                BlockPolicy.overlayFor(own - 1, own, spec.blocksAtLimit, 0L, now),
-            )
-            assertEquals(
-                "${spec.platform} must block AT its own limit ($own)",
-                SurfaceOverlay.BLOCK,
-                BlockPolicy.overlayFor(own, own, spec.blocksAtLimit, 0L, now),
-            )
+    fun `the limiter fires at the shared limit, on the combined blocking count`() {
+        // D76 replaced the per-platform limiter with one budget. The arithmetic is unchanged; what
+        // changed is WHICH number the overlay hands in — `BlockPolicy.blockingTotal(perPlatform)`
+        // against one `SettingsPrefs.dailyLimit(context)`. This pins the boundary itself.
+        val limit = 100
+        assertEquals(
+            "must not block one short of the shared limit",
+            SurfaceOverlay.BUBBLE,
+            BlockPolicy.overlayFor(limit - 1, limit, true, 0L, now),
+        )
+        assertEquals(
+            "must block AT the shared limit",
+            SurfaceOverlay.BLOCK,
+            BlockPolicy.overlayFor(limit, limit, true, 0L, now),
+        )
+    }
+
+    @Test
+    fun `counts from different blocking platforms spend ONE shared budget`() {
+        // The whole point of D76, and the case the old per-platform shape got wrong: 60 reels then
+        // 45 Shorts is 105 short videos and used to block at NEITHER, because each app measured
+        // only itself. Built from the registry so it keeps meaning something as platforms change.
+        val blocking = PlatformRegistry.enabled.filter { it.blocksAtLimit }
+        assumeTrue("needs at least two blocking platforms to be meaningful", blocking.size >= 2)
+
+        val limit = 100
+        val split = blocking.associate { it.platform to limit / blocking.size + 1 }
+        val total = BlockPolicy.blockingTotal(split)
+
+        assertTrue("the split must exceed the shared limit to test anything", total >= limit)
+        split.values.forEach { each ->
+            assertTrue("each platform alone must stay UNDER the limit, or this proves nothing", each < limit)
         }
+        assertEquals(
+            "the combined total must block even though no single platform reached the limit",
+            SurfaceOverlay.BLOCK,
+            BlockPolicy.overlayFor(total, limit, true, 0L, now),
+        )
+    }
+
+    @Test
+    fun `a SHADOW platform's count never contributes to the budget`() {
+        // The safety half of D76. TikTok and Snapchat are counted for display but are NOT cleared
+        // to enforce, and Snapchat is a known OVERcount (it counts Chat/Stories/Map scrolls as
+        // "snaps" — D32). Letting those numbers spend the budget would block someone out of
+        // Instagram because they scrolled their Snapchat inbox.
+        val nonBlocking = PlatformRegistry.enabled.filterNot { it.blocksAtLimit }
+        assumeTrue("needs a non-blocking platform", nonBlocking.isNotEmpty())
+
+        val huge = nonBlocking.associate { it.platform to 10_000 }
+        assertEquals(
+            "no SHADOW/BETA platform may add a single item to the limiter's input",
+            0,
+            BlockPolicy.blockingTotal(huge),
+        )
+    }
+
+    @Test
+    fun `blockingTotal ignores platforms it does not recognise`() {
+        assertEquals(0, BlockPolicy.blockingTotal(emptyMap()))
     }
 
     @Test

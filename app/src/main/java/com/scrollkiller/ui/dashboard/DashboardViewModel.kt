@@ -152,22 +152,23 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
     val blockingPlatforms: List<PlatformSpec> =
         PlatformRegistry.enabled.filter { it.blocksAtLimit }
 
-    private val _dailyLimits = MutableStateFlow(
-        blockingPlatforms.associate { it.platform to SettingsPrefs.dailyLimit(app, it.platform) },
-    )
-
-    /** Each blocking platform's current daily limit, keyed by platform. */
-    val dailyLimits: StateFlow<Map<Platform, Int>> = _dailyLimits
+    private val _dailyLimit = MutableStateFlow(SettingsPrefs.dailyLimit(app))
 
     /**
-     * Move a platform's limit. Written through immediately (no Apply button) because the overlay
-     * re-reads the pref on every count emission, so the new limit is live on the very next reel
-     * — a limit that took effect "next time you open Instagram" would look broken.
+     * The ONE daily limit, across every blocking platform combined (D76). Was a
+     * `Map<Platform, Int>` with a slider each; collapsing it to a single value is the whole of
+     * that change on this layer, because the overlay was already the only thing enforcing it.
      */
-    fun setDailyLimit(platform: Platform, value: Int) {
-        SettingsPrefs.setDailyLimit(getApplication(), platform, value)
-        _dailyLimits.value = _dailyLimits.value +
-            (platform to SettingsPrefs.dailyLimit(getApplication(), platform))
+    val dailyLimit: StateFlow<Int> = _dailyLimit
+
+    /**
+     * Move the limit. Written through immediately (no Apply button) because the overlay re-reads
+     * the pref on every count emission, so the new limit is live on the very next reel — a limit
+     * that took effect "next time you open Instagram" would look broken.
+     */
+    fun setDailyLimit(value: Int) {
+        SettingsPrefs.setDailyLimit(getApplication(), value)
+        _dailyLimit.value = SettingsPrefs.dailyLimit(getApplication())
     }
 
     /**

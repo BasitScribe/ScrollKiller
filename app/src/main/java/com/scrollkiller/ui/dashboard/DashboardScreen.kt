@@ -110,7 +110,7 @@ fun DashboardScreen(
     val bubbleEnabled by viewModel.bubbleEnabled.collectAsState()
     val guiltLine by viewModel.guiltLine.collectAsState()
     val guiltLocale by viewModel.guiltLocale.collectAsState()
-    val dailyLimits by viewModel.dailyLimits.collectAsState()
+    val dailyLimit by viewModel.dailyLimit.collectAsState()
     val health by viewModel.health.collectAsState()
 
     Scaffold(
@@ -154,7 +154,7 @@ fun DashboardScreen(
                 bubbleEnabled = bubbleEnabled,
                 onToggleBubble = viewModel::setBubbleEnabled,
                 blockingPlatforms = viewModel.blockingPlatforms,
-                dailyLimits = dailyLimits,
+                dailyLimit = dailyLimit,
                 onSetDailyLimit = viewModel::setDailyLimit,
                 guiltLocale = guiltLocale,
                 onPickGuiltLocale = viewModel::setGuiltLocale,
@@ -457,8 +457,8 @@ private fun SettingsTab(
     bubbleEnabled: Boolean,
     onToggleBubble: (Boolean) -> Unit,
     blockingPlatforms: List<PlatformSpec>,
-    dailyLimits: Map<Platform, Int>,
-    onSetDailyLimit: (Platform, Int) -> Unit,
+    dailyLimit: Int,
+    onSetDailyLimit: (Int) -> Unit,
     guiltLocale: GuiltLocale,
     onPickGuiltLocale: (GuiltLocale) -> Unit,
     onOpenAccessibilitySettings: () -> Unit,
@@ -589,15 +589,15 @@ private fun SettingsTab(
             }
         }
 
-        // Daily limit, one slider per platform cleared to block (D49). Today that is Instagram
-        // and nothing else — driven off blocksAtLimit rather than a hardcoded row, so a BETA
-        // platform can never show a limit control it would not honour, and promoting one later
-        // needs no change here.
-        items(blockingPlatforms, key = { it.platform }) { spec ->
+        // ONE daily limit for every blocking platform combined (D76, superseding D49's slider
+        // per platform). The row still names which apps it covers, driven off blocksAtLimit
+        // rather than a hardcoded list — so a BETA platform can never appear in a promise the
+        // limit would not honour, and promoting one later needs no change here.
+        item {
             DailyLimitRow(
-                spec = spec,
-                limit = dailyLimits[spec.platform] ?: spec.dailyLimit,
-                onChange = { onSetDailyLimit(spec.platform, it) },
+                covered = blockingPlatforms,
+                limit = dailyLimit,
+                onChange = onSetDailyLimit,
             )
         }
 
@@ -658,14 +658,26 @@ private fun SettingsTab(
  * the next reel.
  */
 @Composable
-private fun DailyLimitRow(spec: PlatformSpec, limit: Int, onChange: (Int) -> Unit) {
+private fun DailyLimitRow(covered: List<PlatformSpec>, limit: Int, onChange: (Int) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
-            stringResource(R.string.settings_limit_title, spec.displayName),
+            stringResource(R.string.settings_limit_title),
             style = MaterialTheme.typography.titleMedium,
         )
         Text(
-            stringResource(R.string.settings_limit_subtitle, limit, spec.unitNoun),
+            stringResource(R.string.settings_limit_subtitle, limit),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        // Name the apps the budget actually covers. Without this the slider is a number with no
+        // stated scope, and the user's reasonable guess ("everything I scroll") would be WRONG —
+        // SHADOW platforms are counted on the Today tab but deliberately excluded from the limit
+        // (D76), so saying which apps are in is the difference between one budget and a surprise.
+        Text(
+            stringResource(
+                R.string.settings_limit_covers,
+                covered.joinToString(" · ") { it.displayName },
+            ),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
