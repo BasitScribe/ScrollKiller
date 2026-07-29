@@ -126,14 +126,17 @@
     <!-- Full-screen block screen (Phase 2). Clearly ScrollKiller's own UI. -->
     <string name="block_title">Reels are Locked</string>
     <string name="block_exit">Exit</string>
-    <!-- block_snooze ("%1$d more minutes") was DELETED at D74 along with its button and handler.
-         Do not re-add the string alone: a translated string with no control is invisible, and a
-         control with no handler is worse. -->
+    <!-- RESTORED at D75 after D74 deleted it. Formatted from BlockLimits.GRACE_MINUTES in
+         BlockScreenController, never hardcoded, so the promise on the button cannot drift from the
+         reprieve the policy actually grants. Restored WITH its button and handler in the same
+         change — the D74 note was right that a string with no control is invisible and a control
+         with no handler is worse, so the three move together in both directions. -->
+    <string name="block_snooze">%1$d more minutes</string>
 
-    <!-- Physical unlock challenges (D50). The block-panel button names its REWARD. It no longer
-         names a specific challenge — the user picks one on the chooser (D53) — so the cost is
-         named per option there instead. Since D74 this is the only reprieve on the screen; the
-         free-tap alternative it used to sit beside is gone.
+    <!-- Physical unlock challenges (D50). The block-panel button names its REWARD, because the
+         design rests on the user choosing the harder path knowingly: a small free thing next to a
+         larger earned one, side by side. It no longer names a specific challenge — the user picks
+         one on the chooser (D53) — so the cost is named per option there instead.
          Minutes is a format arg from BlockLimits.CHALLENGE_GRACE_MINUTES, never written as copy. -->
     <string name="block_challenge">Earn your way out — %1$d minutes</string>
 

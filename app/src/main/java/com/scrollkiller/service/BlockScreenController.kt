@@ -41,6 +41,8 @@ import com.scrollkiller.ui.theme.Brand
  * All methods run on the service main thread.
  *
  * @param onExit user chose to leave (Exit button or Back).
+ * @param onSnooze user asked for [BlockLimits.GRACE_MINUTES] more minutes. Grants a timed
+ *   reprieve. Deleted at D74 and restored at D75, pending a product call — see [BlockLimits].
  * @param onOpenChooser user asked to earn their way out (D50/D53). Opens the chooser; does NOT
  *   start anything. An ALTERNATIVE to Exit, never a replacement — every panel this class shows
  *   carries its own Exit.
@@ -60,6 +62,7 @@ import com.scrollkiller.ui.theme.Brand
 class BlockScreenController(
     private val context: Context,
     private val onExit: () -> Unit,
+    private val onSnooze: () -> Unit,
     private val onOpenChooser: () -> Unit,
     private val onChooseChallenge: (ChallengeSpec?) -> Unit,
     private val onCancelChallenge: () -> Unit,
@@ -113,19 +116,23 @@ class BlockScreenController(
          * `ViewRootImpl.performTraversals()` — scheduled through the Choreographer by the
          * `requestLayout()` in `ViewRootImpl.setView()`. It is not synchronous with `addView`.
          *
-         * So the check this class has made since D52 — read `isAttachedToWindow` on the statement
-         * after `addView` — reads a healthy window as FAILED, roughly one frame too early. That
-         * single mistake is the suspected common cause of every block failure recorded so far, and
-         * it explains both shapes the bug has taken: before D71 the misjudged window was left in
-         * the WindowManager, attached a frame later and became the un-dismissable full-screen trap
-         * the user actually saw; after D71 it is removed a frame early and nothing appears at all.
+         * So the check this class made from D52 to D72 — read `isAttachedToWindow` on the statement
+         * after `addView` — read a healthy window as FAILED, one frame too early, with a 100%
+         * false-negative rate. That single mistake was the root cause of every block failure this
+         * project recorded, and it explains both shapes the bug took: before D71 the misjudged
+         * window was left in the WindowManager, attached a frame later and became the
+         * un-dismissable full-screen trap the user actually saw; after D71 it was removed a frame
+         * early and nothing appeared at all.
          *
          * This value exists so the honest answer can be given. The caller must NOT treat it as
          * failure — no warning, no runtime-denied flag, no cooldown — because nothing has failed
          * yet. Resolution arrives later through [onWindowConfirmed] or [onWindowLost].
          *
-         * THIS IS A HYPOTHESIS UNDER TEST, not a concluded fix. The probe logs what actually
-         * happens on the device so the next session reasons from evidence instead of a fourth guess.
+         * CONFIRMED ON DEVICE AND NOW PERMANENT (D72). The capture read, in order:
+         * `attachedSync=false` → PENDING_ATTACH → `ATTACH LANDED (listener)` → SHOWN →
+         * `PROBE next-frame attached=true`. The window was healthy throughout; the ROM never
+         * refused it, and D52/D70's attribution to a lying permission query is withdrawn. Do not
+         * "simplify" this back into a synchronous check — it cannot work, by construction.
          */
         PENDING_ATTACH,
     }
@@ -307,6 +314,11 @@ class BlockScreenController(
         val root = LayoutInflater.from(context).inflate(R.layout.overlay_block, null) as BlockRootView
         styleFromBrand(root)   // the layout ships colourless; brand is applied here (D58)
         root.findViewById<TextView>(R.id.block_guilt).text = guiltLine
+        val snooze = root.findViewById<Button>(R.id.block_snooze)
+        // Formatted from the constant, never written as copy: the sentence the user reads and the
+        // reprieve they are granted are then the same number by construction (D49).
+        snooze.text = context.getString(R.string.block_snooze, BlockLimits.GRACE_MINUTES)
+        snooze.setOnClickListener(tapListener("snooze", onSnooze))
         root.findViewById<Button>(R.id.block_exit).setOnClickListener(tapListener("block.exit", onExit))
 
         // The physical unlock (D50/D53). Shown only when this device can run AT LEAST ONE challenge
@@ -384,15 +396,15 @@ class BlockScreenController(
         }
 
         // DO NOT JUDGE THE ATTACH HERE. See ShowResult.PENDING_ATTACH: `isAttachedToWindow` cannot
-        // be true yet, because the flag is set in performTraversals on a later frame. The
-        // synchronous reading is logged only as evidence for the hypothesis under test — if it is
-        // false here and true a frame later, every "the ROM is refusing" verdict this project has
-        // recorded was a misread of our own timing.
+        // be true yet, because the flag is set in performTraversals on a later frame. This was
+        // confirmed on device (D72) — it read false here and true a frame later, which is what
+        // proved every "the ROM is refusing" verdict this project recorded was a misread of our own
+        // timing. The synchronous value is still logged, as the canary: if it is ever true here,
+        // the platform's behaviour changed and this whole model should be re-examined.
         val syncAttached = root.isAttachedToWindow
         Log.d(
             TAG,
-            "block: addView returned; attachedSync=$syncAttached " +
-                "(expected false if the premature-check hypothesis holds) " +
+            "block: addView returned; attachedSync=$syncAttached (expected false — D72) " +
                 "injector=${BlockFailureInjector.describe()}",
         )
         scheduleAttachProbes(root, params)
@@ -402,13 +414,14 @@ class BlockScreenController(
     /**
      * Watch for the attach landing, and give up on it at a deadline.
      *
-     * THREE observation points, deliberately, because the point of this build is to find out which
-     * one is telling the truth:
-     *  - [attachWatcher]'s `onViewAttachedToWindow`, the framework's own callback and the earliest
-     *    honest answer;
+     * THREE observation points, and D72's device capture settled which one answers first:
+     *  - [attachWatcher]'s `onViewAttachedToWindow` — the framework's own callback, the earliest
+     *    honest answer, and the one that fired on the device. This is the PRIMARY path;
      *  - the next frame via [View.post], which runs after the traversal that sets `mAttachInfo`, so
-     *    it is where a healthy window MUST read attached;
+     *    it is where a healthy window MUST read attached. Confirmed the listener rather than
+     *    beating it, and is kept as the belt to its braces;
      *  - a [BlockLimits.ATTACH_DEADLINE_MS] backstop that decides the failure if neither fired.
+     *    This is now the ONLY path that can declare a genuine refusal.
      *
      * The window stays on screen for that window of time with [view] unset — which was the trap
      * state before D71 and is safe now precisely because of it: [attachedRoot] owns it, every
@@ -725,12 +738,10 @@ class BlockScreenController(
      *  - **Exit** — highest contrast on the ink ground (near-white fill, ink text). Impossible to miss,
      *    and it is also the healthiest choice, which an anti-doomscroll app should be nudging toward.
      *  - **Earn your way out / chooser rows** — cobalt fill. Clearly actionable, clearly secondary.
-     *  - **Back / Cancel** — the quietest: a ghost outline. They return to a previous panel rather
-     *    than resolving anything, so they stay fully available and uncelebrated.
-     *
-     * The ghost tier used to have a third member, the free "5 more minutes" button — the giving-in
-     * option, deliberately the quietest thing on the screen. It was removed outright at D74; what
-     * remains of that reasoning is that Exit stays loudest, which was never about the snooze.
+     *  - **"5 more minutes" / Back / Cancel** — the quietest: a ghost outline. The snooze is the
+     *    giving-in option, so it is deliberately the least celebrated thing on the screen — fully
+     *    available (never disabled, never hidden) and never sold. Back and Cancel are quiet for a
+     *    different reason: they return to a previous panel rather than resolving anything.
      */
     private fun styleFromBrand(root: View) {
         root.setBackgroundColor(Brand.INK_BLOCK.toInt())
@@ -747,7 +758,7 @@ class BlockScreenController(
             stylePrimaryExit(root.findViewById(id))
         }
         styleSecondary(root.findViewById(R.id.block_challenge))
-        listOf(R.id.chooser_back, R.id.challenge_cancel).forEach { id ->
+        listOf(R.id.block_snooze, R.id.chooser_back, R.id.challenge_cancel).forEach { id ->
             styleGhost(root.findViewById(id))
         }
     }

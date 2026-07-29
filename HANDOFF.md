@@ -7,12 +7,39 @@
 > for f in CLAUDE.md HANDOFF.md docs/*.md ScrollKiller/*.md; do echo "$(grep -c '^```' "$f") $f"; done
 > ```
 
-## ← CURRENT: YouTube blocks + the reprieve is gone (D73/D74)
+## ✅ CLOSED: the block saga (D72) — no longer a checklist
 
-Two owner decisions landed in code and tests. Neither has been on a phone. **Run these on the same
-build as the attach-timing runs below** — a block that never draws would make every check here look
-like a YouTube problem when it is the D72 question wearing a different hat, so if Run A fails, stop
-and report that first.
+**The attach-timing question is ANSWERED and the block is verified working on a device.** The
+capture read `attachedSync=false` → PENDING_ATTACH → `ATTACH LANDED (listener)` → SHOWN →
+`PROBE next-frame attached=true`, and the buttons were exercised live: `challenge.open` → done,
+`chooser.option[forehead_30]` → done, `challenge.exit` → done → launcher started. The window was
+always healthy; the one-frame-early `isAttachedToWindow` read was the entire root cause, and D52's
+and D70's "the ROM is refusing" attribution is corrected in D72.
+
+Nothing below in the attach-timing section needs re-running unless a future change touches
+`BlockScreenController.show`. What DOES remain open is the YouTube calibration (Run E) and the
+restored reprieve (new Run H).
+
+## ← CURRENT: YouTube limits + the restored "5 more minutes" (D73/D75)
+
+The block itself is proven, so a failure in these runs is a YouTube or a reprieve problem — it is no
+longer confounded by the block failing to draw at all.
+
+### Run H — "5 more minutes" is back and works (D75)
+D74 deleted it; D75 put it back pending a product call. It has never been on a phone in either state.
+- [ ] The block panel shows **both** reprieves: "5 more minutes" (quiet ghost outline) and
+      "Earn your way out — 15 minutes". Exit is still the loudest control on the screen.
+- [ ] Tapping "5 more minutes" **dismisses the block and lets you keep scrolling.** The count keeps
+      climbing while you do.
+- [ ] After ~5 minutes the **next** reel re-blocks. Not a reel before it, and no timer fires in
+      between — the grace is a deadline compared on each count emission.
+- [ ] The reprieve **survives leaving Instagram and coming back**, and survives force-stopping
+      ScrollKiller (it is persisted, D49). A reprieve a crash silently revokes is a broken promise.
+- [ ] A completed challenge still grants the **longer** 15-minute reprieve. If the two feel the
+      same, the inequality broke — `BlockLimitsTest` pins it, so report rather than retune.
+- [ ] `adb logcat -s ScrollKiller` shows `TAP snooze → done` when tapped. A tap that logs entry but
+      not `done` means the handler is a no-op; a tap with no log at all means the touch never
+      arrived. Those need opposite fixes (D71).
 
 ### Run E — the YouTube limiter actually fires
 Set the YouTube limit low in Settings (the slider should now BE there — it appears automatically for

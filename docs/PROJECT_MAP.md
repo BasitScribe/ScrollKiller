@@ -2,7 +2,7 @@
 
 > **Single entry point.** Living audit + index of every doc in the project. Pointers only — never a
 > dump of ROADMAP/DECISIONS.
-> Last audited: **2026-07-28** (Phase 2 · challenge suite COMPLETE 4/4 · brand pass done D58 · **YouTube NOW BLOCKS via the D73 override, reversing D57** · **"5 more minutes" DELETED, D74** · **D70/D71/D73/D74 all in tree with device verification PENDING — invariant 6 is not closed, and D72's attach-timing question is still unanswered**).
+> Last audited: **2026-07-29** (Phase 2 · challenge suite COMPLETE 4/4 · brand pass done D58 · **YouTube NOW BLOCKS via the D73 override, reversing D57** · **"5 more minutes" RESTORED, D75 reverses D74** · **✅ BLOCK SAGA CLOSED — D72 device-confirmed: the premature `isAttachedToWindow` check was the whole root cause, the ROM never refused anything, and block + challenge + exit are verified live. Invariant 6 demonstrated, not argued. D52/D70's ROM attribution is corrected.** Still owed on device: YT calibration numbers (Run E) and the restored snooze (Run H)).
 
 ## Read order for a new session
 
@@ -126,11 +126,14 @@ mindmap
 #### Roadmap status (audit 2026-07-28)
 - **Phase 1 ✅** Detection MVP — IG calibrated 49/50 (D11); ±2/50 exit still open as formal checkbox
 - **Phase 2 ← CURRENT** Block live on IG (D49 verified); challenges **all four device-verified** (D50/D53/D54/D55); chooser + "Surprise me" (D53); brand pass (D58); guilt engine; permission integrity (D51); block retry/ReVanced (D52 verified)
-- 🔴 **D70/D71 — two block defects found on device, fixed in tree, NOT yet device-verified.** D71 was a
-  **P0 against invariant 6**: an untracked full-screen overlay that Exit, Back and leaving the app all
-  failed to dismiss, covering the launcher. D70 was the block refusing to draw on a device where the
-  permission was granted, via a self-latching persisted flag. Both are code+tests+docs complete; the
-  HANDOFF CURRENT block (Runs 1–4, including the forced-failure escape) is the gate
+- ✅ **D70/D71/D72 — the block saga is CLOSED and device-verified.** D71 was a **P0 against invariant
+  6**: an untracked full-screen overlay that Exit, Back and leaving the app all failed to dismiss,
+  covering the launcher. D70 was the block refusing to draw on a device where the permission was
+  granted, via a self-latching persisted flag. **D72 found the single cause under both:**
+  `isAttachedToWindow` was read one frame before the framework could set it, so a healthy window was
+  always judged refused — abandoned untracked before D71 (the trap), removed a frame early after it
+  (nothing drew). Device capture confirms the window was fine throughout, and block → chooser →
+  challenge → exit all work. **D52/D70's "the ROM is refusing" attribution is withdrawn**
 - **Open P2 work**
   - Expand guilt pack T3→40, T4→150 (content; ~18 each now)
   - Challenges: **suite COMPLETE 4/4, all device-verified**; only fake-scroll feed remains, and it is not a sensor challenge
@@ -185,13 +188,15 @@ mindmap
 - Full-screen `TYPE_APPLICATION_OVERLAY` at user limit
 - Outcomes: `SHOWN / ALREADY_SHOWING / NO_PERMISSION / FAILED / COOLING_DOWN` (D52). **No permission
   pre-check** — attempt first, classify the failure after (D70)
-- ⚠️ **Attach is verified ASYNCHRONOUSLY and `PENDING_ATTACH` is a real outcome.** `isAttachedToWindow`
-  cannot be true right after `addView` — `mAttachInfo` is set in `ViewRootImpl.performTraversals()`,
-  a frame later. The synchronous check made since D52 read healthy windows as refused; **that is the
-  leading suspect for every block failure in this project's history**, including the D71 trap (the
-  orphan *was* the block) and the flag D70 found latched. Three observation points:
-  `onViewAttachedToWindow`, a next-frame `post`, and a 250ms deadline (`ATTACH_DEADLINE_MS`).
-  **HYPOTHESIS UNDER TEST — see HANDOFF Runs A–D before treating it as settled**
+- ✅ **Attach is verified ASYNCHRONOUSLY and `PENDING_ATTACH` is a real, successful-so-far outcome.**
+  `isAttachedToWindow` cannot be true right after `addView` — `mAttachInfo` is set in
+  `ViewRootImpl.performTraversals()`, a frame later — so the synchronous check made from D52 to D72
+  had a **100% false-negative rate** and was **the root cause of every block failure in this
+  project's history**, including the D71 trap (the orphan *was* the block) and the flag D70 found
+  latched. Three observation points: `onViewAttachedToWindow` (**primary — this is the one that
+  fired on device**), a next-frame `post` (confirmed it), and a 250ms deadline (`ATTACH_DEADLINE_MS`,
+  now the only path that can declare a genuine refusal). **CONFIRMED D72, permanent model — do not
+  "simplify" it back to a synchronous check, which cannot work by construction**
 - `OverlayDiagnostics` — one greppable state block on a genuine refusal: exception class+message,
   `canDrawOverlays`, AppOps SAW mode (**diagnostic only, never a gate** — D70), `bubbleAttached`
   (the bit that splits "device refuses our overlays" from "device refuses THIS window"), device, params
@@ -206,11 +211,11 @@ mindmap
 - Panels live in a `ScrollView fillViewport` so Exit is reachable at any font scale
 - Every button / chooser row / Back logs a **pair**: `TAP <n>` then `TAP <n> → <outcome>`
 - `BlockFailureInjector` — DEBUG-only, `adb ... -a com.scrollkiller.BLOCK_FAIL --es mode no_attach|throw|off`
-- Always: **Exit**, **Back**, challenge path. **"5 more minutes" was DELETED (D74)** — button, string, `GRACE_MINUTES`/`GRACE_MS` and the `onSnooze` handler. The only reprieve is now a completed challenge (15 min). Invariant 6 is unaffected: a snooze was never an exit
+- Always: **Exit**, **Back**, challenge path. **"5 more minutes" was deleted (D74) and RESTORED (D75)** — button, string, `GRACE_MINUTES`/`GRACE_MS` and the `onSnooze` handler are all back, pending a deliberate product call on whether the block should have a free escape. Two reprieves again: 5 min free, 15 min earned, with D50's inequality re-asserted. Invariant 6 is unaffected either way: a snooze was never an exit
 - **THREE panels, one window** (D50/D53): `block_panel` / `chooser_panel` / `challenge_panel`; child swaps via one `showPanel` helper so "exactly one visible" cannot be broken piecemeal. Root never GONE (D30). **Each panel carries its own Exit, listed first** for TalkBack traversal — invariant 6
 
 #### BlockLimits
-- Default 100; slider 20–300 step 10; challenge grace **15** min — the ONE reprieve since D74
+- Default 100; slider 20–300 step 10; **two** reprieves since D75 — free tap **5** min, challenge **15** min (the inequality is asserted in `BlockLimitsTest`)
 - Retry cooldown 30s (`BlockRetryPolicy`)
 
 #### PermissionHealth (D51/D52, corrected by D70)
@@ -279,7 +284,7 @@ state, not a bug; the test says so and names what to do when the next strategy i
 - Engine shape: `ChallengeSpec` (data) → `ChallengeSensors.sourceFor` → `ChallengeSensorSource` impl; pure detector beside each thin source (`JumpDetector`, `HoldDetector`)
 - **Counts vs holds** — `ProgressUnit {COUNT, SECONDS}`. Counts are monotonic; a hold's `onHoldElapsed` is absolute and **resets to 0 on a break** (never pauses — the anti-cheat), so `isComplete` is NOT sticky for holds. Ring counts down for seconds, arc always fills
 - **Holds need two things counts didn't** (D54): `FLAG_KEEP_SCREEN_ON` while the challenge panel is up (a 30s default screen timeout == the hold length, and a sleeping screen stops the sensor), cleared on every teardown path; and `ChallengeHaptics` — 400ms buzz complete / two-pulse break — because a face-down ring is invisible and flipping up to check destroys the hold
-- Reward **flat 15 min** for every challenge, and since D74 it is **the only reprieve in the app** (the 5-min free tap it used to be measured against is deleted, and D50's asserted inequality with it). Flat was chosen over effort-scaled so choice stays about accessibility, not optimisation (D53)
+- Reward **flat 15 min** for every challenge, measured against the restored 5-min free tap (D75) with D50's inequality asserted again — the gap IS the incentive. Flat was chosen over effort-scaled so choice stays about accessibility, not optimisation (D53)
 - **Availability is per-spec** (`ChallengeAvailability`), not app-wide: only the step sensors need `ACTIVITY_RECOGNITION`, so a denied motion permission must not hide jump/holds. `MotionStatus` remains the step-specific question for Settings + PermissionHealthReader
 - Chooser panel + "Surprise me" (never repeats the previous draw); unavailable → no row
 
@@ -334,13 +339,14 @@ Pure JVM coverage for: detectors, registry, BlockPolicy/Limits/Retry, Permission
 ---
 
 ### Current HANDOFF focus (see HANDOFF.md)
-**Attach-timing diagnostic (CURRENT, an experiment not a fix):** does `attachedSync=false` become
-`ATTACH LANDED` / `PROBE next-frame attached=true` one frame later? If yes, the ROM never refused
-anything and D52's premature check is the root cause of the whole saga. If no, the
-`DIAG stage=no-attach-by-deadline` line is the payload. Run B (**block over a NON-Instagram app**)
-splits ROM-refusal from Instagram's `setHideOverlayWindows`. Still owed: the `:415` stack trace.
+**✅ Attach-timing: ANSWERED (D72).** `attachedSync=false` did become `ATTACH LANDED` /
+`PROBE next-frame attached=true` one frame later. The ROM never refused anything; the premature
+check was the root cause of the whole saga, and block → chooser → challenge → exit are verified
+live. Runs A–D are retired.
+**Still open on device:** Run E (YouTube calibration — the count it actually fires at versus the
+limit, which is the data D57 has waited five sessions for) and Run H (the restored "5 more minutes").
 **Not built on purpose:** the `performGlobalAction` fallback and the retry ladder — they reverse D49
-and wait on this evidence.
+and were waiting on this evidence, which has now arrived and says they are not needed.
 
 **D73/D74 — YouTube blocks, the reprieve is gone (CURRENT, unverified):** Runs E–G in HANDOFF. The
 YT limit slider must APPEAR in Settings · Shorts blocks and **the feed does not** (the Shorts-shelf

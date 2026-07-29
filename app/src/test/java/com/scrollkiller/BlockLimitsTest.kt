@@ -80,9 +80,11 @@ class BlockLimitsTest {
 
     @Test
     fun `the grace duration derives from the minutes on the button`() {
-        // The button text is formatted from CHALLENGE_GRACE_MINUTES and the reprieve is granted
-        // from CHALLENGE_GRACE_MS. If these ever stopped agreeing, the app would promise one thing
-        // and do another — the exact failure this derivation exists to make impossible.
+        // Each button's text is formatted from its MINUTES constant and its reprieve is granted
+        // from the matching MS one. If a pair ever stopped agreeing, the app would promise one
+        // thing and do another — the exact failure this derivation exists to make impossible.
+        assertEquals(BlockLimits.GRACE_MINUTES * 60_000L, BlockLimits.GRACE_MS)
+        assertTrue("a zero-length reprieve is not a reprieve", BlockLimits.GRACE_MINUTES > 0)
         assertEquals(BlockLimits.CHALLENGE_GRACE_MINUTES * 60_000L, BlockLimits.CHALLENGE_GRACE_MS)
         assertTrue(
             "a zero-length reprieve is not a reprieve",
@@ -91,16 +93,27 @@ class BlockLimitsTest {
     }
 
     @Test
-    fun `the earned reprieve is the only one, and it is not free (D74)`() {
-        // D50's test here asserted an inequality — challenge grace had to exceed the free tap's
-        // five minutes, or nobody would walk twenty steps for what one tap gave for nothing. D74
-        // deleted the free tap outright, so the thing that could dominate the challenge no longer
-        // exists and the inequality has nothing left to compare against.
+    fun `a completed challenge must be worth more than the free tap (D50, restored D75)`() {
+        // The design flaw this assertion exists to avoid: if walking twenty steps bought the same
+        // five minutes as one tap on the button beside it, the challenge would be strictly
+        // dominated, nobody would ever choose it, and the feature would ship dead without anyone
+        // finding out for months.
         //
-        // What replaces it is the property that actually matters now: a reprieve exists, it is
-        // reached only by finishing something, and it is bounded. An unbounded or accidentally-zero
-        // grace would mean the block either never returns or never lets go.
-        assertTrue("the reprieve must be real", BlockLimits.CHALLENGE_GRACE_MS > 0)
+        // D74 deleted the free tap and this test went with it — correctly, since an inequality
+        // needs two sides. D75 restored the tap, so the constraint is live again. If the tap is
+        // ever removed for good, delete this test rather than weakening it.
+        assertTrue(
+            "challenge grace (${BlockLimits.CHALLENGE_GRACE_MINUTES}m) must exceed the free tap " +
+                "(${BlockLimits.GRACE_MINUTES}m), or the challenge is strictly dominated",
+            BlockLimits.CHALLENGE_GRACE_MS > BlockLimits.GRACE_MS,
+        )
+    }
+
+    @Test
+    fun `both reprieves stay bounded, so neither can disable the block`() {
+        // Independent of the inequality above: an unbounded grace would mean the block never
+        // returns. An hour is far past any reprieve this screen should be handing out.
+        assertTrue("the reprieve must be real", BlockLimits.GRACE_MS > 0)
         assertTrue(
             "a reprieve longer than an hour is a disabled block, not a reprieve",
             BlockLimits.CHALLENGE_GRACE_MS <= 60 * 60_000L,

@@ -98,7 +98,7 @@ enum class ProgressUnit {
  *   runtime on a device with no step detector, because the spec cannot know the hardware.
  * @param promptRes the instruction shown on the challenge screen, with [target] as its single
  *   format argument. A format string rather than baked copy so the sentence cannot drift from the
- *   number — the same rule D49 applied to the reprieve button's minutes.
+ *   number — the same rule D49 applied to the snooze button's minutes.
  * @param unit what [target] counts, and therefore what the ring's label says. Defaults to
  *   [ProgressUnit.COUNT] because that is what every counting challenge wants and it keeps the two
  *   original specs unchanged.

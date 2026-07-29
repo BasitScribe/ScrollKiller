@@ -113,6 +113,7 @@ class OverlayController(
         BlockScreenController(
             context,
             onExit = ::onExit,
+            onSnooze = ::onSnooze,
             onOpenChooser = ::onOpenChooser,
             onChooseChallenge = ::onChooseChallenge,
             onCancelChallenge = ::onCancelChallenge,
@@ -160,8 +161,8 @@ class OverlayController(
     private var currentPlatform: Platform? = null
 
     /**
-     * Last summary seen, so [onChallengeComplete] and [collapseNudge] can re-render without a new
-     * emission.
+     * Last summary seen, so [onSnooze], [onChallengeComplete] and [collapseNudge] can re-render
+     * without a new emission.
      */
     private var lastSummary = TodaySummary.EMPTY
 
@@ -603,8 +604,8 @@ class OverlayController(
 
     private fun hideBlock(reason: String = "unspecified") {
         GuiltLines.endBlockEpisode()
-        // Releases the step sensor. Routed through here rather than sprinkled across the exit and
-        // completion paths for the same reason endBlockEpisode is: a dismissal that
+        // Releases the step sensor. Routed through here rather than sprinkled across the exit,
+        // snooze and completion paths for the same reason endBlockEpisode is: a dismissal that
         // forgets leaves a sensor registered by a background service, which is a battery
         // complaint nobody ever traces back to us (D50).
         challenge.stop()
@@ -677,13 +678,36 @@ class OverlayController(
     }
 
     /**
-     * Challenge completed — grant the reprieve. **Since D74 this is the ONLY way to get one**; the
-     * free "5 more minutes" tap that used to share this persistence path is gone.
+     * The free "5 more minutes" — grant the small, unearned reprieve. Restored at D75 after D74
+     * deleted it; see [BlockLimits.GRACE_MINUTES] for why it is here pending a product call.
      *
-     * Everything D49 established about a reprieve still holds, because the mechanism is unchanged:
-     * the deadline is PERSISTED (see [SettingsPrefs.graceUntilMs]) rather than held in memory, so
-     * it survives leaving Instagram and survives the service being restarted — a reprieve that a
-     * process death silently revokes is a promise broken at the worst possible moment.
+     * Shares [onChallengeComplete]'s persistence path exactly, differing only in the constant, so
+     * everything D49 established about a reprieve holds for both: PERSISTED (see
+     * [SettingsPrefs.graceUntilMs]) rather than held in memory, so it survives leaving Instagram and
+     * survives the service being restarted — a reprieve that a process death silently revokes is a
+     * promise broken at the worst possible moment.
+     */
+    private fun onSnooze() {
+        val platform = currentPlatform ?: return
+        SettingsPrefs.setGraceUntilMs(
+            context,
+            platform,
+            System.currentTimeMillis() + BlockLimits.GRACE_MS,
+        )
+        hideBlock("snooze")
+        render(platform, lastSummary)
+    }
+
+    /**
+     * Challenge completed — grant the EARNED reprieve.
+     *
+     * Deliberately a different, larger constant than [onSnooze]'s: granting the same as the free
+     * tap would make the challenge strictly dominated and the feature dead on arrival
+     * ([BlockLimits.CHALLENGE_GRACE_MINUTES] documents the inequality, and a test pins it).
+     *
+     * Same persistence path as the tap, so everything D49 established about a reprieve — it
+     * survives leaving Instagram, it survives a service restart, and it re-blocks on the next reel
+     * after it lapses — holds here unchanged.
      *
      * Nothing schedules the re-block. There is no timer: the grace is a deadline the render path
      * already compares against on every count emission, so the next reel AFTER it expires blocks
