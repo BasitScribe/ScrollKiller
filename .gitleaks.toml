@@ -1,0 +1,65 @@
+# gitleaks configuration.
+#
+# ---------------------------------------------------------------------------
+# THE useDefault LINE IS LOAD-BEARING — DO NOT REMOVE IT
+# ---------------------------------------------------------------------------
+# A custom .gitleaks.toml REPLACES the built-in ruleset entirely. Without
+# `[extend] useDefault = true` this file would silently disable every default
+# detector — AWS keys, private keys, GitHub tokens, the lot — and the scan would
+# go green because it had stopped looking. That is strictly worse than having no
+# scanner, because it manufactures the feeling of coverage (the same reasoning
+# `ignore-unfixed` carries in backend.yml).
+#
+# Verified, not assumed: with this file in place, a planted AWS-shaped key is
+# still detected. Re-run that check before trusting a green scan after editing
+# here — the command is in the header of .github/workflows/security.yml.
+[extend]
+useDefault = true
+
+# ---------------------------------------------------------------------------
+# THE FINDING THIS EXEMPTS, AND WHY IT IS NOT A LEAK
+# ---------------------------------------------------------------------------
+#   File:   backend/tests/test_logging_redaction.py:50
+#   Rule:   generic-api-key
+#   Value:  "rt_live_abc123"
+#
+#     cleaned = redact({"user_id": 7, "refresh_token": "rt_live_abc123"})
+#     assert cleaned == {"user_id": 7, "refresh_token": REDACTED}
+#
+# It is a fixture in the test that proves refresh tokens are redacted before
+# they reach the logs. It fired because `_live_` is the shape real payment and
+# auth providers use for production keys, which is exactly the heuristic
+# generic-api-key exists to catch — a good rule doing its job on a fake input.
+#
+# It is NOT a credential:
+#   - `abc123` is a placeholder, not entropy;
+#   - it authenticates against nothing — this service has no auth yet. The first
+#     real credentials arrive in 3b (database URL) and 3c (Google client secret),
+#     which is precisely why the scanner went in before them (D60);
+#   - redaction is keyed on the FIELD NAME (`is_sensitive("refresh_token")`), not
+#     on the value, so the fixture's realism is incidental to what is asserted.
+# There is nothing to rotate.
+#
+# ---------------------------------------------------------------------------
+# WHY IT IS SCOPED TO THE VALUE AND NOT TO tests/
+# ---------------------------------------------------------------------------
+# The obvious fix — allowlist `backend/tests/` — would mean a REAL secret pasted
+# into a fixture never fires again, and fixtures are one of the likeliest places
+# for a real credential to get committed by accident. So this matches the exact
+# literal instead: one known-fake value is exempt and nothing else is. Every
+# other secret in tests/, including one added tomorrow, still fails the build.
+#
+# Matching on `regexes` alone rather than `paths` + `regexes` is deliberate:
+# combining the two changed meaning across gitleaks versions (OR by default, AND
+# only once `matchCondition` existed), and a version-dependent allowlist is how
+# an exemption silently widens.
+#
+# ALTERNATIVE NOT TAKEN, worth knowing about: because redaction is key-based, the
+# fixture could simply be a value that looks like nothing (`"x"`), removing the
+# finding at source with no config at all. That edits a test to satisfy a
+# scanner, so it is left as an owner call rather than done unilaterally.
+[allowlist]
+description = "Fake refresh-token fixture in the log-redaction test. Not a credential; see the header."
+regexes = [
+  '''rt_live_abc123''',
+]
