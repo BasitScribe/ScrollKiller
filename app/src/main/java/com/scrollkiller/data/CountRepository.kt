@@ -1,6 +1,8 @@
 package com.scrollkiller.data
 
 import com.scrollkiller.data.db.DailyCountDao
+import com.scrollkiller.data.db.DailyMinutesDao
+import com.scrollkiller.data.db.DailyMinutesEntity
 import com.scrollkiller.data.db.DailyCountEntity
 import com.scrollkiller.data.db.ScrollEvent
 import com.scrollkiller.data.db.ScrollEventDao
@@ -14,6 +16,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import com.scrollkiller.stats.SessionRoller
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.concurrent.TimeUnit
@@ -141,6 +145,7 @@ internal object TodayMerge {
 class CountRepository(
     private val dao: DailyCountDao,
     private val eventDao: ScrollEventDao,
+    private val minutesDao: DailyMinutesDao,
     private val scope: CoroutineScope,
     private val zone: ZoneId = ZoneId.systemDefault(),
     private val today: () -> String = { LocalDate.now(zone).toString() },
@@ -208,7 +213,7 @@ class CountRepository(
                 ),
             )
             CountLatency.persisted()
-            maybePrune(atMs)
+            rollUpAndPrune(atMs)
         }
     }
 
@@ -276,13 +281,54 @@ class CountRepository(
     suspend fun clearAll() {
         dao.deleteAll()
         eventDao.deleteAll()
+        // The time rollup is derived from the events being deleted, so it goes with them — leaving
+        // it would show a history of minutes for days whose counts the user just cleared.
+        minutesDao.deleteAll()
         pending.value = PendingCounts.NONE
     }
 
-    /** Prune raw events older than the retention window, at most once per hour. */
-    private suspend fun maybePrune(nowMs: Long) {
+    /**
+     * Roll each day's sessions into the permanent time aggregate, THEN prune the raw events. At
+     * most once per hour (D80).
+     *
+     * ## The ordering is the whole point
+     * `scroll_events` carries the only timestamps this app ever has, and invariant 4 deletes them
+     * after seven days. Pruning first would throw away the evidence before the number is computed,
+     * so time older than a week could never be anything better than a flat count guess. Rolling
+     * first means the raw log still disappears exactly on schedule — what survives is one integer
+     * per day, the same shape and privacy posture `daily_counts` already has.
+     *
+     * ## Why today and past days are written differently
+     * The prune cutoff is ROLLING (`now - 7d`), so the oldest day loses its events gradually
+     * through the day rather than all at once. Re-rolling such a day would read only the events not
+     * yet deleted and record a number that had silently SHRUNK since it was correct. So past days
+     * use `insertIfAbsent` — first write wins, and the first write for a completed day is the
+     * complete one, since a day that has ended keeps all its events for roughly six more days.
+     * Today uses `upsert`, for the mirror-image reason: it is still accumulating, every pass has
+     * strictly more evidence than the last, and its events are hours old so a partial read is not
+     * possible.
+     *
+     * Reads all remaining raw events, which is bounded by construction: the prune keeps at most
+     * seven days of them.
+     */
+    private suspend fun rollUpAndPrune(nowMs: Long) {
         if (nowMs - lastPruneMs < PRUNE_INTERVAL_MS) return
         lastPruneMs = nowMs
+
+        val todayKey = today()
+        eventDao.getScrollsSince(0L)
+            .groupBy { event ->
+                LocalDate.ofInstant(Instant.ofEpochMilli(event.timestamp), zone).toString()
+            }
+            .forEach { (date, events) ->
+                val row = DailyMinutesEntity(
+                    date = date,
+                    seconds = SessionRoller.secondsFor(events.map { it.timestamp }),
+                    computedAt = nowMs,
+                )
+                if (date == todayKey) minutesDao.upsert(row) else minutesDao.insertIfAbsent(row)
+            }
+
         eventDao.deleteOlderThan(nowMs - RAW_RETENTION_MS)
     }
 

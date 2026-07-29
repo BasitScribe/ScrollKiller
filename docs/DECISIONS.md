@@ -83,6 +83,8 @@
 - *(D61–D64 reserved: cold starts, pooled-vs-direct DB URLs, refresh-token rotation, server-side day boundary. Deliberately NOT written yet — see D60's closing note.)*
 - **D67** — CI runs Temurin, local runs the JetBrains Runtime, and the two are deliberately independent — ⚑ its "never relax the pin" instruction was **unfollowable and is corrected by D79**
 - **D79** — The daemon JVM pin drops its vendor, keeps its version (corrects D67). A bare `toolchainVendor` is a build that cannot start; foojay does not rescue it
+- **D80** — Scrolling TIME is rolled up daily BEFORE the raw prune, so an honest number survives invariant 4. DB v4 adds `daily_minutes`; sessions, not first-to-last
+- **D81** — ⚑ Streaks are computed, never stored, and are **PROVISIONAL** until the Phase-3 server day boundary (D14/invariant 2). Milestones must derive, never cache
 - **D68** — Private now, public after launch: CI minutes are a budget and git history is a portfolio artifact
 - **D69** — Python pins to 3.13, superseding CLAUDE.md's 3.12 — a version you cannot run locally is a gate that only runs in CI
 - **D70** — A permission PREDICTION may never gate the block attempt; `canBlock` answers only what is queryable, and the observed-failure flag became display-only after it latched blocking off permanently — ⚑ its "the ROM is refusing anyway" framing is **corrected by D72**; the stale-signal principle stands
@@ -390,3 +392,49 @@ No defined toolchain download url for LINUX on x86_64 architecture.
 **THE RULE THAT REPLACES D67's:** a vendor pin must ship WITH the matching `toolchainUrl` entries for every platform the build runs on, or with a runner that installs that vendor. A bare vendor line is not a strict build; it is a build that cannot start on any machine that does not already happen to have that JDK.
 
 NOT CHANGED: the Gradle version, the wrapper, `foojay-resolver-convention` (still correct for ordinary toolchains), the workflow's Temurin setup, or anything in the app. Verified locally with CI's exact command minus `lintDebug`, which fails only on the machine-specific `local.properties` PropertyEscape error the workflow header already documents as unable to fire on a runner — 308 tests pass, `assembleDebug` and `compileReleaseKotlin` green.
+
+---
+
+**D80. Scrolling TIME is rolled up daily before the raw events are pruned, so an honest number survives invariant 4. DB v4 adds `daily_minutes` (2026-07-29).**
+
+THE PROBLEM, and it is a schema fact rather than a preference. The Insights screen (Pass B) wants "time saved" derived from real sessions instead of a flat count × 6s. Sessions need timestamps. This app has exactly one source of timestamps, `scroll_events`, and **invariant 4 deletes it after seven days**. `daily_counts` is kept forever but carries no time at all — `(date, platform, count)`. So a 30-day view could show session-accurate time for its first week and nothing but a flat guess for the rest, which is two different measurements presented as one series.
+
+REJECTED IMMEDIATELY: extending raw retention. Invariant 4 is not a tuning knob — it exists so the app never accumulates a long-lived, timestamped behavioural log of a person's scrolling. Buying a nicer chart with a permanent record of when someone was on their phone is the wrong trade, and it is the trade a privacy-pitched product least gets to make.
+
+THE SHAPE: **compute while the evidence exists, keep only the answer.** A rollup pass runs immediately before each prune, distils each day's raw timestamps into one integer, and writes it to a new `daily_minutes` table. The raw log then disappears exactly on schedule. What survives is one row per day — the same shape, cardinality and privacy posture `daily_counts` has had since D14. Nothing is retained that was not already retained in kind.
+
+**ORDERING IS THE WHOLE DESIGN.** `maybePrune` became `rollUpAndPrune`. Pruning first would discard the timestamps before the number is derived, which is the entire failure this ADR exists to avoid; the two operations are not independent and must never be reordered or split across passes.
+
+**PAST DAYS AND TODAY ARE WRITTEN WITH OPPOSITE CONFLICT RULES, and this is the subtle correctness core.** The prune cutoff is ROLLING (`now − 7d`), so the oldest day does not vanish at once — it bleeds events gradually through the day. A second rollup of such a day would see only the survivors and overwrite a complete figure with a partial one; the number would silently SHRINK days after it was correct, and nothing would look wrong. So past days use `insertIfAbsent` (IGNORE — first write wins, and the first write for a completed day is complete, since a finished day keeps all its events for roughly six more days), while today uses `upsert` (REPLACE — it is still accumulating, every pass strictly dominates the last, and its events are hours old so a partial read is impossible).
+
+**SESSIONS, not first-to-last.** `SessionRoller` splits a day's timestamps wherever silence exceeds `SESSION_GAP_MS` (5 min) and sums each sitting's span. Measuring first-to-last across a day would count the eight hours between a morning scroll and an evening one AS SCROLLING — the single worst thing this number could do. The gap value is chosen on an asymmetry rather than a guess: over-splitting costs accuracy in a figure nobody reads (how many sittings), under-splitting corrupts the figure everybody reads (how long), so when in doubt it splits. Each session also credits `TAIL_SECONDS` for the item still on screen when it ended — reusing `TimeEstimate.AVG_SECONDS_PER_ITEM` rather than inventing a second constant, so the flat and session estimates stay anchored to one assumption. Without the tail a one-event session would be zero, recording someone who opened Reels, watched one and left as having spent no time.
+
+**SECONDS, NOT MINUTES, in storage.** The feature is spoken about in minutes and the UI will render minutes, but a REAL column accumulates float error when a screen sums thirty rows and turns every test assertion into an epsilon question. Integer seconds is exact, sums exactly, and converts at the edge.
+
+**A NEW TABLE, NOT A COLUMN ON `daily_counts`.** That table is PK `(date, platform)` and deliberately mirrors the server shape (D14), so a column would either break the mirror or force the server to grow one. Time is also a per-DAY quantity: a sitting that moves from Reels to Shorts is one sitting, not two.
+
+**THE RAMP, ACCEPTED AND DOCUMENTED.** A rollup can only start from the day it ships. Every day older than that has already had its timestamps pruned, so its time can never be more than a flat estimate — the history does not exist to recover. B2 must therefore RENDER the boundary rather than blend across it, which is what `observeEarliestRolledDate()` is for. It self-heals in about a month. Stating it here so the Insights screen is not written as though the series were uniform.
+
+MIGRATION 3→4 creates the table and back-fills nothing, because nothing is back-fillable. `MigrationSqlTest` is new and asserts every hand-written `CREATE TABLE` against Room's exported schema JSON: a mismatch throws `IllegalStateException` on the UPGRADE launch, on a user's device, and cannot fail on a fresh install — so it survives every ordinary test. Both prior migrations carried a comment claiming they matched the generated schema; that claim was true and entirely unenforced. The test also pins that the exported version matches the declared one and that no version step lacks a migration. It was mutation-checked: deleting one space from the SQL fails it.
+
+NOT TOUCHED: detection, counting, the overlay, the block, `daily_counts` itself, or the prune's seven-day window. `clearAll()` now also clears `daily_minutes`, since a time history for days whose counts were just wiped would be a leak of exactly the thing the user asked to delete.
+
+---
+
+**D81. Streaks are computed, never stored, and they are PROVISIONAL until the server day boundary lands (2026-07-29).**
+
+`StreakCalculator` is a pure function over daily totals: current run ending today, and the best run inside a caller-chosen window. No Android imports, no clock — `today` and `from` are parameters, which is what makes it testable and what makes the Phase-3 migration a change of caller rather than of logic.
+
+**THE PROVISIONAL PART, which is the reason this is an ADR and not just a function.** A streak is *entirely* a claim about which day a count belongs to, and that question does not have its final answer yet. D14 records the device-local `LocalDate` as an INTERIM boundary; invariant 2 says the real one is the user's timezone computed SERVER-side, arriving in Phase 3. So a count recorded at 00:30 local may later migrate to the previous day — joining two runs, or splitting one. **A "best streak" displayed today can legitimately change.**
+
+The consequence is a constraint on Pass C, recorded now because it is much cheaper than discovering it later: **milestones must DERIVE from this function, never cache its output as a durable achievement.** An awarded "7-day streak" badge that becomes arithmetically false after the Phase-3 boundary shift is worse than no badge — it is the app contradicting its own history, on a screen whose entire job is to be trusted. Deriving costs nothing; the data is already there.
+
+TWO DEFINITIONS a reasonable implementer would get the other way, so both are pinned by tests:
+
+**A day is under at `total < limit`**, matching `BlockPolicy` exactly. The block fires at `count >= limit`, so `<=` here would call the day you were blocked a success — the streak would disagree with what the user actually experienced.
+
+**A day with no row counts as UNDER.** `daily_counts` rows are created lazily on first advance, so an absent day means zero scrolls: phone off, app unused, on holiday. Treating a gap as a BREAK would punish someone for a day they did not doomscroll at all, which inverts the point of the number. It also means "best" is bounded by the caller's window rather than by history — a 7-day view can never report a 30-day best, which is why `from` is a parameter.
+
+**Today is judged on where it currently stands**, not deferred to midnight: over the limit already means current = 0. That is honest — the user blew it and the screen should not pretend otherwise for up to 24 hours — and it means the streak can be lost later in the same day, which is correct rather than a glitch. Rows dated in the FUTURE (a clock change, a restored backup) are ignored, so they cannot extend a streak the user has not lived.
+
+NOT BUILT HERE: any UI. This is Pass B1, data only — deliberately split from the Insights screen so a chart bug could never leave a half-migrated database behind.

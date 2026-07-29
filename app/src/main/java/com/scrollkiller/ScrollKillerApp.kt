@@ -27,6 +27,11 @@ class ScrollKillerApp : Application() {
     val database: ScrollKillerDatabase by lazy { ScrollKillerDatabase.build(this) }
 
     val countRepository: CountRepository by lazy {
-        CountRepository(database.dailyCountDao(), database.scrollEventDao(), appScope)
+        CountRepository(
+            database.dailyCountDao(),
+            database.scrollEventDao(),
+            database.dailyMinutesDao(),
+            appScope,
+        )
     }
 }
