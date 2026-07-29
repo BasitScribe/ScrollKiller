@@ -1,0 +1,29 @@
+# Dependabot. GitHub Actions only, for now.
+#
+# 3a pins every action by full commit SHA rather than by tag, because a tag is
+# mutable — `@v7` can point at different code tomorrow, which makes a pinned-
+# looking workflow a supply-chain hole. SHA pinning closes it and creates a new
+# problem: pins go stale silently, including security fixes. Dependabot is the
+# other half of that decision, not an optional extra.
+#
+# The pip ecosystem is added in 3b, alongside the first real dependency set
+# (SQLAlchemy, asyncpg, Alembic). Adding it now would open PRs against a
+# three-package skeleton — noise that trains you to close Dependabot PRs without
+# reading them, which is the exact habit that later misses a real CVE (D60).
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Asia/Kolkata
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore"
+      include: scope
+    labels:
+      - dependencies
+      - ci

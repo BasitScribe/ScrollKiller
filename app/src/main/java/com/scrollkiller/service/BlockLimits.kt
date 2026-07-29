@@ -1,14 +1,14 @@
 package com.scrollkiller.service
 
 /**
- * Every number the block screen is tuned by, in one place: how many reels a day is "too many",
- * what the user is allowed to choose, and how long "5 more minutes" actually lasts.
+ * Every number the block screen is tuned by, in one place: how many short videos a day is "too
+ * many", what the user is allowed to choose, and how long a completed challenge buys.
  *
  * ## Why these are not literals at their call sites
  * The daily limit is read by the overlay, written by Settings, defaulted on [PlatformSpec] and
  * printed on a button. Four call sites for one product number is exactly how a slider ends up
- * offering a range the policy does not honour, or a button promising five minutes while the
- * timer grants ten. The BUTTON TEXT in particular is formatted from [GRACE_MINUTES] rather than
+ * offering a range the policy does not honour, or a button promising fifteen minutes while the
+ * deadline grants ten. The BUTTON TEXT is formatted from [CHALLENGE_GRACE_MINUTES] rather than
  * written as copy, so the promise the user reads cannot drift from the reprieve they get.
  *
  * Pure Kotlin, no Android imports, so the clamping is unit-testable off-device.
@@ -32,30 +32,65 @@ object BlockLimits {
     /** Slider granularity. Ten keeps the choice meaningful without pretending 137 differs from 140. */
     const val LIMIT_STEP = 10
 
-    /** How long "5 more minutes" lasts, in minutes. The number the BUTTON is formatted from. */
-    const val GRACE_MINUTES = 5
-
-    /** [GRACE_MINUTES] as millis. Derived, so the two can never disagree. */
-    const val GRACE_MS = GRACE_MINUTES * 60_000L
-
     /**
      * How long COMPLETING A CHALLENGE buys, in minutes (D50).
      *
-     * ## Why this must be larger than [GRACE_MINUTES], and is asserted to be
-     * The free tap and the challenge grant their reprieve through the same mechanism, so if they
-     * granted the same amount the challenge would be strictly dominated: nobody walks twenty steps
-     * for what one tap gives for nothing, and the feature would ship dead. The gap IS the
-     * incentive, and it is stated on the two buttons side by side — "5 more minutes" against
-     * "Walk 20 steps — 15 minutes" — so the user is choosing between a small free thing and a
-     * larger earned one rather than being nagged into the harder path.
+     * ## STRICT MODE: this is the ONLY reprieve (D77)
+     * There used to be a second one: a free "5 more minutes" button granting `GRACE_MINUTES`
+     * through this same mechanism. It was deleted at D74, restored at D75 pending a product call,
+     * and deleted again at D77 when that call was made — challenge or exit, no free bail. The
+     * constants, button, string and handler are all gone, not merely hidden.
      *
-     * `BlockLimitsTest` asserts the inequality, so a later tuning edit cannot quietly reintroduce
-     * the dead-on-arrival version.
+     * The removed pair carried an asserted inequality (challenge grace had to exceed the free tap,
+     * or nobody would walk twenty steps for what one tap gave for nothing). That assertion went
+     * with the thing it constrained; what replaced it is simpler and stronger, because there is no
+     * longer a cheaper competing path for this number to be dominated by.
+     *
+     * **Deleting it did not touch invariant 6, and this is the point to be careful about.** A
+     * snooze was never an exit — it deferred the block and kept the user IN the app. Exit and Back
+     * are what invariant 6 names; both are on all three panels, neither has ever depended on this
+     * constant, and both must keep working on a device where no challenge is available at all —
+     * where the block panel is now Exit and nothing else. `BlockEscapeTest` asserts that case
+     * against the shipping layout and HANDOFF Run J checks it on a device, because "strict" must
+     * never shade into "trapped".
      */
     const val CHALLENGE_GRACE_MINUTES = 15
 
-    /** [CHALLENGE_GRACE_MINUTES] as millis. Derived, for the same reason as [GRACE_MS]. */
+    /**
+     * [CHALLENGE_GRACE_MINUTES] as millis. DERIVED, never written twice: the sentence on the button
+     * is formatted from the minutes and the reprieve is granted from the millis, so the promise the
+     * user reads and the time they actually get are the same number by construction.
+     */
     const val CHALLENGE_GRACE_MS = CHALLENGE_GRACE_MINUTES * 60_000L
+
+    /**
+     * How long to wait before trying to draw the block again after its window failed to appear
+     * (D52). See [BlockRetryPolicy].
+     *
+     * Thirty seconds is chosen against the two failure modes it sits between. Shorter and a ROM
+     * that refuses `SYSTEM_ALERT_WINDOW` at runtime puts us back into the retry storm this
+     * constant exists to end — the block re-inflating a full-screen layout on every reel. Longer
+     * and a user who fixes the permission stands in Instagram waiting for the app to notice.
+     * At thirty seconds a denial costs one attempt every half-minute, which is invisible, and a
+     * recovery is picked up well within the time it takes to switch back to the app.
+     */
+    const val BLOCK_RETRY_COOLDOWN_MS = 30_000L
+
+    /**
+     * How long the block window is given to actually attach before the attempt is called a failure.
+     *
+     * Attachment cannot be read synchronously — `mAttachInfo` is set in
+     * `ViewRootImpl.performTraversals()`, a Choreographer frame after `addView` returns — so a
+     * deadline is the only honest way to distinguish "still coming" from "never coming". See
+     * [BlockScreenController.ShowResult.PENDING_ATTACH].
+     *
+     * 250ms is roughly fifteen frames at 60Hz: far beyond the one or two a healthy attach needs
+     * even on a loaded main thread, and short enough that a genuine refusal is reported while the
+     * user is still on the reel that triggered it. It is deliberately NOT tuned to be tight — a
+     * false "refused" verdict is the expensive mistake here, and this project has now made it
+     * three times.
+     */
+    const val ATTACH_DEADLINE_MS = 250L
 
     /**
      * The nearest legal limit to [value]: snapped to [LIMIT_STEP] and held inside

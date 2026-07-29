@@ -40,7 +40,7 @@ import android.util.Log
  * Main thread only. Sensor callbacks arrive on the thread of the handler the manager was given;
  * we pass none, so they land on the main looper, which is where the views are.
  */
-class StepSensorSource(private val context: Context) {
+class StepSensorSource(private val context: Context) : ChallengeSensorSource {
 
     private val sensorManager: SensorManager? =
         context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
@@ -53,7 +53,7 @@ class StepSensorSource(private val context: Context) {
         private set
 
     /** Does this device have any step sensor at all? The hardware half of availability. */
-    fun hasStepSensor(): Boolean = resolveSensor() != null
+    override fun hasSensor(): Boolean = resolveSensor() != null
 
     /**
      * Begin feeding [progress], calling [onChange] after every update.
@@ -63,7 +63,7 @@ class StepSensorSource(private val context: Context) {
      *   checks availability before offering the challenge at all, so this is the second line of
      *   defence rather than the first.
      */
-    fun start(progress: ChallengeProgress, onChange: () -> Unit): Boolean {
+    override fun start(progress: ChallengeProgress, onChange: () -> Unit): Boolean {
         stop()
         val manager = sensorManager ?: return false
         val sensor = resolveSensor() ?: return false
@@ -101,7 +101,7 @@ class StepSensorSource(private val context: Context) {
     }
 
     /** Unregister. Idempotent — safe to call from every dismissal path, which is the point. */
-    fun stop() {
+    override fun stop() {
         val current = listener ?: return
         listener = null
         activeStrategy = null

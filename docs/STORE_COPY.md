@@ -26,8 +26,9 @@ dismissed", "locks you out", "forces you to stop", "no way around it".
    and we would have no recourse (D49).
 3. **The overlay permission is optional.** Revoke "Display over other apps" and the block no-ops.
    Detection and the in-app counter keep working, which is the intended fail-soft behaviour.
-4. **Two sanctioned ways past it ship on purpose** — "5 more minutes" and a physical challenge
-   (D50). See the challenge entry below.
+4. **A sanctioned way past it ships on purpose** — a physical challenge (D50). The free "5 more
+   minutes" that used to sit beside it was deleted at **D77** (strict mode: challenge or exit), so
+   do not describe two reprieves. See the challenge entry below.
 5. **It depends on a permission the user can revoke at any moment.** Revoking "Display over other
    apps" kills the block instantly, and a debug reinstall did exactly that during testing (D51).
    So the block cannot be described as *always* working either — words like "always", "guaranteed",
@@ -74,6 +75,32 @@ satisfy.
 
 ---
 
+## ❌ Never claim ScrollKiller blocks YouTube (or TikTok, or Snapchat)
+
+**v1 blocks Instagram only. This is a decision, not a gap (D57).**
+
+YouTube Shorts is `Maturity.BETA`: it **counts** — the number is real, it feeds the daily total and
+the bubble — but it is structurally barred from driving a limit or a block
+(`blocksAtLimit = blockEnabled && STABLE`). The advance-detection strategy for Shorts is built and
+reasoned (D34) and ReVanced is supported (D52); what was never produced is the on-device acceptance
+capture, so the count is not calibrated and the app will not act on it. TikTok and Snapchat are
+further away still — both `BETA` *and* never toured, with Snapchat a known overcount.
+
+Banned phrasings: "blocks Instagram and YouTube", "works on all short-video apps", "stops you on
+Reels, Shorts and TikTok", any feature bullet or screenshot that shows a block screen over YouTube,
+and any app-icon row implying parity between the four platforms.
+
+**Say instead:** *blocks Instagram Reels; counts YouTube Shorts, TikTok and Snapchat.* The
+distinction between counting and blocking is the honest one and it is legible to users — the app
+itself shows a BETA badge next to the uncalibrated platforms for exactly this reason.
+
+If YouTube is ever promoted to STABLE (a one-line change once the capture exists — the criteria are
+written in D57), update this entry and the one below in the same commit as the promotion.
+
+*Source: D57, D32, D34.*
+
+---
+
 ## ⚠️ Per-platform accuracy claims must match `Maturity`
 
 Only Instagram is calibrated (49/50, D11) and only Instagram can enforce a limit. YouTube, TikTok
@@ -83,4 +110,4 @@ a block, and Snapchat is a known overcount.
 Copy must not present blocking as working across "all your apps", and any accuracy figure must name
 Instagram. If a platform is promoted to STABLE later, update this entry with it.
 
-*Source: D32, D49.*
+*Source: D32, D49, D57.*

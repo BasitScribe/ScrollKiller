@@ -2,8 +2,11 @@ package com.scrollkiller
 
 import com.scrollkiller.service.BlockLimits
 import com.scrollkiller.service.BlockPolicy
+import com.scrollkiller.service.PlatformRegistry
 import com.scrollkiller.service.SurfaceOverlay
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 
 /**
@@ -12,7 +15,8 @@ import org.junit.Test
  *
  * Two properties matter more than the arithmetic. The "never the feed" safety gate: the block must
  * not fire while surface gating is inactive, whatever the count says (D19/D24/D32). And the
- * reprieve: "5 more minutes" must genuinely suppress the block for exactly that long (D49).
+ * reprieve: a completed challenge must genuinely suppress the block for exactly that long (D49,
+ * and since D74 it is the only reprieve there is).
  */
 class BlockPolicyTest {
 
@@ -51,11 +55,90 @@ class BlockPolicyTest {
         )
     }
 
+    /* --- the ONE limiter, across all blocking platforms (D76) ------------------------------ */
+
+    @Test
+    fun `the limiter fires at the shared limit, on the combined blocking count`() {
+        // D76 replaced the per-platform limiter with one budget. The arithmetic is unchanged; what
+        // changed is WHICH number the overlay hands in — `BlockPolicy.blockingTotal(perPlatform)`
+        // against one `SettingsPrefs.dailyLimit(context)`. This pins the boundary itself.
+        val limit = 100
+        assertEquals(
+            "must not block one short of the shared limit",
+            SurfaceOverlay.BUBBLE,
+            BlockPolicy.overlayFor(limit - 1, limit, true, 0L, now),
+        )
+        assertEquals(
+            "must block AT the shared limit",
+            SurfaceOverlay.BLOCK,
+            BlockPolicy.overlayFor(limit, limit, true, 0L, now),
+        )
+    }
+
+    @Test
+    fun `counts from different blocking platforms spend ONE shared budget`() {
+        // The whole point of D76, and the case the old per-platform shape got wrong: 60 reels then
+        // 45 Shorts is 105 short videos and used to block at NEITHER, because each app measured
+        // only itself. Built from the registry so it keeps meaning something as platforms change.
+        val blocking = PlatformRegistry.enabled.filter { it.blocksAtLimit }
+        assumeTrue("needs at least two blocking platforms to be meaningful", blocking.size >= 2)
+
+        val limit = 100
+        val split = blocking.associate { it.platform to limit / blocking.size + 1 }
+        val total = BlockPolicy.blockingTotal(split)
+
+        assertTrue("the split must exceed the shared limit to test anything", total >= limit)
+        split.values.forEach { each ->
+            assertTrue("each platform alone must stay UNDER the limit, or this proves nothing", each < limit)
+        }
+        assertEquals(
+            "the combined total must block even though no single platform reached the limit",
+            SurfaceOverlay.BLOCK,
+            BlockPolicy.overlayFor(total, limit, true, 0L, now),
+        )
+    }
+
+    @Test
+    fun `a SHADOW platform's count never contributes to the budget`() {
+        // The safety half of D76. TikTok and Snapchat are counted for display but are NOT cleared
+        // to enforce, and Snapchat is a known OVERcount (it counts Chat/Stories/Map scrolls as
+        // "snaps" — D32). Letting those numbers spend the budget would block someone out of
+        // Instagram because they scrolled their Snapchat inbox.
+        val nonBlocking = PlatformRegistry.enabled.filterNot { it.blocksAtLimit }
+        assumeTrue("needs a non-blocking platform", nonBlocking.isNotEmpty())
+
+        val huge = nonBlocking.associate { it.platform to 10_000 }
+        assertEquals(
+            "no SHADOW/BETA platform may add a single item to the limiter's input",
+            0,
+            BlockPolicy.blockingTotal(huge),
+        )
+    }
+
+    @Test
+    fun `blockingTotal ignores platforms it does not recognise`() {
+        assertEquals(0, BlockPolicy.blockingTotal(emptyMap()))
+    }
+
+    @Test
+    fun `a non-blocking platform's count never raises a block, however far past the limit`() {
+        // The other half: TikTok and Snapchat count and display, and no number they produce may
+        // reach the screen. Driven off the registry rather than a hardcoded list so promoting one
+        // of them without meaning to fails here.
+        PlatformRegistry.enabled.filterNot { it.blocksAtLimit }.forEach { spec ->
+            assertEquals(
+                "${spec.platform} may not block at any count",
+                SurfaceOverlay.BUBBLE,
+                BlockPolicy.overlayFor(10_000, spec.dailyLimit, spec.blocksAtLimit, 0L, now),
+            )
+        }
+    }
+
     /* --- the reprieve (D49) -------------------------------------------------------------- */
 
     @Test
     fun `inside the grace window the block stays down`() {
-        val granted = now + BlockLimits.GRACE_MS
+        val granted = now + BlockLimits.CHALLENGE_GRACE_MS
         assertEquals(SurfaceOverlay.BUBBLE, overlay(count = 500, graceUntilMs = granted))
         // Still down a minute in, and still down a millisecond before it lapses.
         assertEquals(
@@ -69,11 +152,11 @@ class BlockPolicyTest {
     }
 
     @Test
-    fun `the boundary belongs to the block — five minutes means five`() {
+    fun `the boundary belongs to the block — fifteen minutes means fifteen`() {
         // At exactly the deadline the reprieve is over. Asserted because an off-by-one the other
         // way would be a promise the app quietly extends, and the next count emission after this
-        // instant is what re-blocks (there is no timer — see OverlayController.onSnooze).
-        val granted = now + BlockLimits.GRACE_MS
+        // instant is what re-blocks (there is no timer — see OverlayController.onChallengeComplete).
+        val granted = now + BlockLimits.CHALLENGE_GRACE_MS
         assertEquals(SurfaceOverlay.BLOCK, overlay(count = 500, graceUntilMs = granted, nowMs = granted))
     }
 
@@ -90,7 +173,7 @@ class BlockPolicyTest {
         // behave any differently.
         assertEquals(
             SurfaceOverlay.BUBBLE,
-            overlay(count = 20, graceUntilMs = now + BlockLimits.GRACE_MS),
+            overlay(count = 20, graceUntilMs = now + BlockLimits.CHALLENGE_GRACE_MS),
         )
         assertEquals(SurfaceOverlay.BUBBLE, overlay(count = 20, graceUntilMs = now - 1))
     }
@@ -99,7 +182,7 @@ class BlockPolicyTest {
     fun `a grace can never resurrect a blocked platform's gate`() {
         // Belt and braces on the ordering of the conditions: no combination of grace and count
         // turns an ineligible platform into a blocking one.
-        listOf(0L, now - 1, now + BlockLimits.GRACE_MS).forEach { grace ->
+        listOf(0L, now - 1, now + BlockLimits.CHALLENGE_GRACE_MS).forEach { grace ->
             assertEquals(
                 "gatingActive=false must win at grace=$grace",
                 SurfaceOverlay.BUBBLE,

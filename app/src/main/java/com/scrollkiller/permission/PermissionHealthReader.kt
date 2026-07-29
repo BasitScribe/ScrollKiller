@@ -9,6 +9,7 @@ import android.os.Build
 import android.provider.Settings
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import com.scrollkiller.data.SettingsPrefs
 import com.scrollkiller.ui.onboarding.AccessibilityStatus
 import com.scrollkiller.ui.onboarding.OverlayStatus
 
@@ -34,6 +35,10 @@ object PermissionHealthReader {
         accessibilityEnabled = AccessibilityStatus.isServiceEnabled(context),
         canDrawOverlays = OverlayStatus.canDrawOverlays(context),
         canNotify = canNotify(context),
+        // Not a permission query — the last OBSERVED outcome of actually trying to draw the
+        // window, recorded by BlockScreenController. On a ROM where canDrawOverlays lies, this is
+        // the only field that tells the truth (D52).
+        overlayRuntimeDenied = SettingsPrefs.overlayRuntimeDenied(context),
     )
 
     /**
@@ -67,7 +72,12 @@ object PermissionHealthReader {
     fun openSettingsFor(context: Context, gap: PermissionGap) {
         when (gap) {
             PermissionGap.ACCESSIBILITY -> AccessibilityStatus.openAccessibilitySettings(context)
-            PermissionGap.OVERLAY -> OverlayStatus.openOverlaySettings(context)
+            // Both overlay gaps land on the same screen. For OVERLAY_BLOCKED_BY_SYSTEM the switch
+            // will already look ON — the banner's copy is what explains that, and toggling it off
+            // and on again is genuinely the fix on the ROMs that do this.
+            PermissionGap.OVERLAY,
+            PermissionGap.OVERLAY_BLOCKED_BY_SYSTEM,
+            -> OverlayStatus.openOverlaySettings(context)
             PermissionGap.NOTIFICATIONS -> openNotificationSettings(context)
         }
     }

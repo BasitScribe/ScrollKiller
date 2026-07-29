@@ -1,0 +1,24 @@
+# Line endings, made deterministic — `core.autocrlf` is a per-machine git setting,
+# so without this file two developers (or a Windows dev and a Linux CI runner) can
+# disagree about what is in the repo. Normalise to LF on commit, check out native.
+* text=auto
+
+# Shell scripts MUST be LF in the repo. A `gradlew` stored with CRLF fails on the
+# Linux CI runner with `bad interpreter: /bin/sh^M`, and the error names the shell
+# rather than the line ending, so it costs an hour the first time you meet it.
+*.sh     text eol=lf
+gradlew  text eol=lf
+
+# Windows scripts must stay CRLF or cmd.exe mis-parses them.
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+
+# Binary — never normalise, never diff as text.
+*.png      binary
+*.jpg      binary
+*.jpeg     binary
+*.webp     binary
+*.jar      binary
+*.apk      binary
+*.aab      binary
+*.keystore binary

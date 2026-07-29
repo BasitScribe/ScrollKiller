@@ -12,6 +12,9 @@ import com.scrollkiller.ui.dashboard.DashboardScreen
 import com.scrollkiller.ui.dashboard.DashboardViewModel
 import com.scrollkiller.ui.onboarding.AccessibilityStatus
 import com.scrollkiller.ui.onboarding.DisclosureScreen
+import com.scrollkiller.ui.onboarding.OnboardingRoute
+import com.scrollkiller.ui.onboarding.OnboardingStep
+import com.scrollkiller.ui.onboarding.WelcomeScreen
 import com.scrollkiller.ui.onboarding.OverlayPermissionScreen
 import com.scrollkiller.ui.onboarding.OverlayStatus
 import com.scrollkiller.ui.theme.ScrollKillerTheme
@@ -19,11 +22,11 @@ import com.scrollkiller.ui.theme.ScrollKillerTheme
 /**
  * The single entry-point Activity (declared as LAUNCHER in the manifest).
  *
- * It routes between three states, in order:
- *  1. accessibility NOT enabled           -> [DisclosureScreen] (required permission)
- *  2. accessibility on, overlay missing
- *     and the step not yet dismissed       -> [OverlayPermissionScreen] (optional)
- *  3. otherwise                            -> [DashboardScreen] (Today / Apps / Settings)
+ * The route between screens is [OnboardingRoute.stepFor] — a pure function with a test, rather
+ * than a `when` block here. It moved out when [WelcomeScreen] was added in FRONT of the
+ * policy-mandated disclosure (D78): "we put a screen ahead of the invariant-5 screen" is not a
+ * change to make in an untested expression, and the test now pins that the disclosure is
+ * unreachable-past while accessibility is off.
  *
  * Both permission flags are re-checked in [onResume] so returning from the system
  * Settings screen immediately advances the UI without a restart. The overlay step is
@@ -36,6 +39,7 @@ class MainActivity : ComponentActivity() {
     private val accessibilityEnabled = mutableStateOf(false)
     private val canDrawOverlays = mutableStateOf(false)
     private val overlayStepDismissed = mutableStateOf(false)
+    private val welcomeSeen = mutableStateOf(false)
 
     /** The dashboard's ViewModel once composed, so [onResume] can refresh its health (D51). */
     private var dashboard: DashboardViewModel? = null
@@ -47,6 +51,7 @@ class MainActivity : ComponentActivity() {
         // Seed before first composition so the correct screen shows immediately.
         refreshPermissionState()
         overlayStepDismissed.value = isOverlayStepDismissed()
+        welcomeSeen.value = isWelcomeSeen()
 
         // App open = a fresh guilt line, even if the count hasn't moved a tier since last time
         // (D41). onCreate, NOT onResume: an open is a new look at your number, whereas a resume
@@ -56,15 +61,22 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             ScrollKillerTheme {
-                when {
-                    !accessibilityEnabled.value -> DisclosureScreen(
+                val step = OnboardingRoute.stepFor(
+                    welcomeSeen = welcomeSeen.value,
+                    accessibilityEnabled = accessibilityEnabled.value,
+                    canDrawOverlays = canDrawOverlays.value,
+                    overlayStepDismissed = overlayStepDismissed.value,
+                )
+                when (step) {
+                    OnboardingStep.WELCOME -> WelcomeScreen(onContinue = { markWelcomeSeen() })
+                    OnboardingStep.DISCLOSURE -> DisclosureScreen(
                         onEnableClick = { AccessibilityStatus.openAccessibilitySettings(this) },
                     )
-                    !canDrawOverlays.value && !overlayStepDismissed.value -> OverlayPermissionScreen(
+                    OnboardingStep.OVERLAY -> OverlayPermissionScreen(
                         onEnableClick = { OverlayStatus.openOverlaySettings(this) },
                         onSkipClick = { dismissOverlayStep() },
                     )
-                    else -> {
+                    OnboardingStep.DASHBOARD -> {
                         val dashboardViewModel: DashboardViewModel = viewModel()
                         // Held so onResume can refresh permission health on it (D51) — the same
                         // return-from-Settings mechanism the two flags above already use, extended
@@ -99,6 +111,19 @@ class MainActivity : ComponentActivity() {
         canDrawOverlays.value = OverlayStatus.canDrawOverlays(this)
     }
 
+    /**
+     * Persist that the welcome has been seen, so it shows exactly once per install.
+     *
+     * Written on the way OUT of the screen rather than on the way in: a user who force-quits
+     * mid-read should get the introduction again, not lose it to a launch they never finished.
+     */
+    private fun markWelcomeSeen() {
+        prefs().edit().putBoolean(KEY_WELCOME_SEEN, true).apply()
+        welcomeSeen.value = true
+    }
+
+    private fun isWelcomeSeen(): Boolean = prefs().getBoolean(KEY_WELCOME_SEEN, false)
+
     /** Persist that the user skipped the optional overlay step so we don't nag them. */
     private fun dismissOverlayStep() {
         prefs().edit().putBoolean(KEY_OVERLAY_STEP_DISMISSED, true).apply()
@@ -113,5 +138,6 @@ class MainActivity : ComponentActivity() {
     private companion object {
         const val PREFS = "scrollkiller_onboarding"
         const val KEY_OVERLAY_STEP_DISMISSED = "overlay_step_dismissed"
+        const val KEY_WELCOME_SEEN = "welcome_seen"
     }
 }

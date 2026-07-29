@@ -1,5 +1,7 @@
 package com.scrollkiller.brain
 
+import com.scrollkiller.ui.theme.Brand
+
 /**
  * The app's emotional core: how fried your brain is, as a pure function of today's
  * reel count. The brain visibly degrades as the count climbs.
@@ -15,12 +17,18 @@ package com.scrollkiller.brain
  * this enum Android-free is what makes it testable on the JVM. This type answers "which
  * state", MascotArt answers "what it looks like".
  *
- * @param accentArgb 0xAARRGGBB accent colour for the state.
+ * The accent VALUES come from [Brand] (D58) — this enum owns which state you are in and which accent
+ * belongs to it, not what that accent is. Importing Brand keeps this class Android- and Compose-free,
+ * because Brand is deliberately plain Kotlin for exactly this reason; the unit tests still run on the
+ * JVM untouched.
+ *
+ * @param accentArgb 0xAARRGGBB accent colour for the state. A raw Long, not a Compose `Color`, so the
+ *   plain-View bubble can tint from the same source Home reads.
  */
 enum class BrainState(val accentArgb: Long) {
-    HEALTHY(0xFF2E7D32), // green
-    CRACKING(0xFFF9A825), // amber
-    FRIED(0xFFC62828); // red
+    HEALTHY(Brand.STATE_HEALTHY),   // mint
+    CRACKING(Brand.STATE_CRACKING), // the mascot's brim orange
+    FRIED(Brand.STATE_FRIED);       // the mascot's sneaker red
 
     companion object {
         /** Count at which the brain starts CRACKING (inclusive). */

@@ -37,15 +37,21 @@ object MotionStatus {
             ContextCompat.checkSelfPermission(context, PERMISSION) == PackageManager.PERMISSION_GRANTED
 
     /** Does the hardware have a step detector or counter? Some devices genuinely have neither. */
-    fun hasStepSensor(context: Context): Boolean = StepSensorSource(context).hasStepSensor()
+    fun hasStepSensor(context: Context): Boolean = StepSensorSource(context).hasSensor()
 
     /**
-     * The ONE predicate the block screen asks before offering a challenge.
+     * Can this device run a STEP challenge? Both halves must hold, and they fail differently: no
+     * permission is fixable by the user in Settings, no sensor is not fixable at all.
+     * [hasStepSensor] is what Settings checks before showing its row, so a device that can never
+     * run a step challenge is never asked for a permission that would unlock nothing.
      *
-     * Both halves must hold, and they fail differently: no permission is fixable by the user in
-     * Settings, no sensor is not fixable at all. [hasStepSensor] is what Settings checks before
-     * showing its row, so a device that can never run a challenge is never asked for a permission
-     * that would unlock nothing.
+     * NOT what the block screen asks any more. It used to be the one app-wide question, which was
+     * right while WALK was the only challenge and wrong the moment a second one existed — the step
+     * sensors are the only ones behind a runtime permission, so this hid a jump challenge that
+     * needs no permission at all. That question is now
+     * [com.scrollkiller.challenge.ChallengeAvailability.isAvailable], per spec. This remains the
+     * right question for Settings' motion row and for the permission-health reader, both of which
+     * are asking specifically about step access.
      */
     fun isAvailable(context: Context): Boolean =
         hasPermission(context) && hasStepSensor(context)

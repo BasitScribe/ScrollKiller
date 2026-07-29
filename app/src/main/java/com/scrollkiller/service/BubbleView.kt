@@ -13,6 +13,7 @@ import com.scrollkiller.brain.BrainState
 import com.scrollkiller.brain.MascotArt
 import com.scrollkiller.data.TodaySummary
 import com.scrollkiller.stats.TimeEstimate
+import com.scrollkiller.ui.theme.Brand
 
 /**
  * The overlay bubble's view tree: a compact `[mascot] 42` pill that expands IN PLACE into a
@@ -409,10 +410,10 @@ class BubbleView(context: Context) : LinearLayout(context) {
         const val BAR_GAP_DP = 6
         const val BAR_ROW_MARGIN_DP = 6
 
-        /** Headline + count colour: white over the accent-tinted pill. */
-        const val TEXT_COLOR = 0xFFFFFFFF.toInt()
+        /** Headline + count colour: white over the accent-tinted pill. From [Brand] (D58). */
+        val TEXT_COLOR = Brand.ON_DARK.toInt()
 
         /** Panel label colour: white at ~76% so the labels recede behind the numbers. */
-        const val PANEL_TEXT_COLOR = 0xC2FFFFFF.toInt()
+        val PANEL_TEXT_COLOR = Brand.ON_DARK_MUTED.toInt()
     }
 }

@@ -175,7 +175,19 @@ class CountRepository(
      * server timezone-truth boundary — see docs/SCHEMA.md "Day boundary" and
      * invariant #2 (the client must never decide the date long-term).
      */
-    fun record(spec: PlatformSpec, atMs: Long = System.currentTimeMillis()) {
+    /**
+     * @param sourcePackage the package the event actually came from. Defaults to the spec's
+     *   canonical one; the service passes the real value so a platform with variants records WHICH
+     *   client produced each raw event (D52). The AGGREGATE row stays keyed on the platform — a
+     *   user's Shorts habit is one habit whether it arrives via Google's client or ReVanced — but
+     *   the raw event keeping the true package is what makes a surface tour on a modified client
+     *   readable.
+     */
+    fun record(
+        spec: PlatformSpec,
+        atMs: Long = System.currentTimeMillis(),
+        sourcePackage: String = spec.packageName,
+    ) {
         CountLatency.begin(spec.platform)
         val date = today()
         pending.update { current ->
@@ -190,7 +202,7 @@ class CountRepository(
             eventDao.insertScroll(
                 ScrollEvent(
                     platform = spec.platform.id,
-                    appPackage = spec.packageName,
+                    appPackage = sourcePackage,
                     timestamp = atMs,
                     countedAs = spec.unitNoun,
                 ),

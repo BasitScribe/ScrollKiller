@@ -24,6 +24,12 @@
       broken, and the Home banner — which needs no permission at all — remains the
       guaranteed signal. Dangerous only on API 33+. Requested from the Settings tab,
       same reason as ACTIVITY_RECOGNITION above.
+    - VIBRATE: the completion and hold-broken buzzes for the hold challenges (D54). The
+      face-down challenge points the progress ring at a table, so the buzz is the ONLY
+      feedback the user has — without it they flip the phone up to check, which breaks
+      the very hold they were checking on. NORMAL permission: granted at install, no
+      runtime prompt, no Settings row, nothing for the user to fix. A device with no
+      vibrator gets silence and everything else still works (ChallengeHaptics no-ops).
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
@@ -31,6 +37,7 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
         android:name=".ScrollKillerApp"
