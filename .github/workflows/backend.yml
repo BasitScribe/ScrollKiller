@@ -109,7 +109,7 @@ jobs:
       # CRITICAL with no upstream patch is not something this build can fix, and
       # blocking on it just trains people to add ignore entries.
       - name: Scan image (Trivy)
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
         with:
           image-ref: scrollkiller-api:${{ github.sha }}
           severity: HIGH,CRITICAL
@@ -120,7 +120,7 @@ jobs:
       # Filesystem scan catches what an image scan cannot: a vulnerable pin in a
       # lockfile that has not reached the runtime layer.
       - name: Scan dependencies (Trivy filesystem)
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
         with:
           scan-type: fs
           scan-ref: backend
