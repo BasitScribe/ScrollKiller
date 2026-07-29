@@ -37,6 +37,9 @@ longer confounded by the block failing to draw at all.
 - [ ] **CRITICAL — today's bar equals the Today tab's number.** Scroll a few reels, then switch
       Today ⇄ Insights repeatedly. They must never disagree, even for a moment. A lower final bar
       means the pending merge was bypassed (D35's defect class).
+      *(`RangeMergeTest` now pins this structurally on every build — the fake DAO answers the two
+      read paths with DIFFERENT numbers for today, so only the correct wiring passes, and it is
+      mutation-checked. This device check is now a confirmation rather than the only guard.)*
 - [ ] **Weekly**: about five bars. The last is labelled **"This week so far"** and is expected to be
       shorter — that label is the whole point; without it a Tuesday reads as a collapse.
 - [ ] Only the LAST bar is partial. The first bar must be a full week, never a stub.
