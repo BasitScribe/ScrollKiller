@@ -7,18 +7,36 @@
 # is that check.
 #
 # ---------------------------------------------------------------------------
-# WHY TEMURIN HERE AND JETBRAINS LOCALLY (D67)
+# WHY TEMURIN HERE AND JETBRAINS LOCALLY (D67, corrected by D79)
 # ---------------------------------------------------------------------------
-# `gradle/gradle-daemon-jvm.properties` pins the daemon JVM to vendor=jetbrains,
-# version=21 — that is Android Studio's bundled JBR, which is the right JVM for
-# a developer running builds from the IDE. GitHub's runners ship Temurin and
-# Zulu, never JBR.
+# `gradle/gradle-daemon-jvm.properties` pins the daemon JVM to VERSION 21 and no
+# vendor. Local runs Android Studio's bundled JBR, CI runs the runner's
+# preinstalled Temurin, and the pin holds both to the same Java version — which
+# is exactly the property D67 wanted.
 #
-# The pin is DELIBERATELY NOT RELAXED to make CI happy. Local and CI are allowed
-# to run different JVMs of the same version; what they must not do is drift into
-# each other's configuration, where a change made for CI's benefit silently
-# changes what a developer builds. If Gradle's daemon criteria refuses Temurin,
-# the fix goes in this file — never in the pin.
+# WHAT D67 GOT WRONG, kept here because this comment is where the next person
+# will look. It originally read "the pin is DELIBERATELY NOT RELAXED to make CI
+# happy... if Gradle's daemon criteria refuses Temurin, the fix goes in this file
+# — never in the pin." That instruction could not be followed: the pin then also
+# carried `toolchainVendor=jetbrains`, so the daemon criteria did not merely
+# "refuse Temurin", it refused to START without a JBR, and no change confined to
+# this workflow could satisfy it short of downloading JBR on every run. The first
+# CI run failed with:
+#
+#   Unable to download toolchain matching the requirements
+#   ({languageVersion=21, vendor=JetBrains, ...}) from 'null', due to:
+#   No defined toolchain download url for LINUX on x86_64 architecture.
+#
+# The vendor line was auto-captured by `updateDaemonJvm` from the generating
+# machine's JVM, not chosen — and there is no build-correctness reason to demand
+# a vendor for a Gradle daemon. Dropping it restores D67's actual intent at zero
+# CI cost, since Temurin is preinstalled on the runner and JBR is not.
+#
+# NOTE ALSO: `foojay-resolver-convention` in settings.gradle.kts does NOT apply
+# here. It resolves ordinary Java toolchains; the daemon criteria goes through
+# DaemonJavaToolchainProvisioningService, which reads only explicit
+# `toolchainUrl.<OS>.<ARCH>` entries. Do not assume foojay will rescue a vendor
+# pin — it will not, and that assumption cost a debugging round.
 #
 # ---------------------------------------------------------------------------
 # LINT ASYMMETRY — CI MAY PASS WHERE LOCAL FAILS
