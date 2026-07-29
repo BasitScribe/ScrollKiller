@@ -17,6 +17,29 @@
     -->
     <string name="accessibility_service_description">Counts how many reels/short videos you scroll so ScrollKiller can show your daily total, and — once you pass the daily limit you set — shows a full-screen block over that app so you can stop. You can always leave the block. It reads only scroll events in short-video feeds and which app is currently in the foreground (so the counter bubble and the block can appear over that app and go away when you leave it) — never the videos, captions, messages, or anything you view. Nothing you look at ever leaves your phone.</string>
 
+    <!--
+        Welcome screen (D78) — the FIRST screen on a fresh install, in front of the disclosure.
+
+        It asks for nothing. That is what makes adding it legal under invariant 5: the disclosure
+        still precedes any request to enable the service, and this screen only explains and hands
+        off to it.
+
+        NO CLAIM ABOUT THE USER. An earlier draft opened with "You scroll about 2 hours a day",
+        which is a statement about a person we have not measured — exactly what STORE_COPY.md
+        forbids, and its rule covers in-app copy, not only the listing. The question framing claims
+        nothing, and it is better copy anyway: it opens the curiosity gap that motivates granting a
+        permission people are rightly wary of.
+
+        "on your phone" is load-bearing, not filler — the privacy promise is the strongest thing we
+        have to offer at the moment we are about to ask for an Accessibility Service.
+    -->
+    <string name="welcome_title">How much do you actually scroll?</string>
+    <string name="welcome_body">Most people guess low. ScrollKiller counts every reel and short you watch — on your phone — and shows you the real number.</string>
+    <string name="welcome_preview_label">Today</string>
+    <string name="welcome_preview_hint">Counting starts when you turn it on</string>
+    <string name="welcome_cta">Show me</string>
+    <string name="welcome_privacy">No account. Nothing leaves your phone.</string>
+
     <!-- Disclosure screen (shown BEFORE we send the user to Settings — invariant #5). -->
     <string name="disclosure_title">One permission to count your scrolling</string>
     <string name="disclosure_what_title">What it does</string>
@@ -45,6 +68,19 @@
 
     <!-- Apps tab. -->
     <string name="apps_title">Apps</string>
+
+    <!--
+        Empty states (D78). Shown when nothing has been counted yet — a fresh install, or the first
+        minutes after Clear all data.
+
+        The tone rule: an empty state here must NOT read as failure or as a scold. Nothing being
+        counted is the app's best-case outcome, not an error, and this is also the very first thing
+        a brand-new user sees after granting the permission. So it explains what will happen rather
+        than apologising for a blank box.
+    -->
+    <string name="empty_today_title">Nothing counted yet</string>
+    <string name="empty_today_body">Open Instagram Reels or YouTube Shorts and your count starts here.</string>
+    <string name="empty_apps_body">Once you scroll a tracked app, it shows up here with its own bar.</string>
 
     <!-- Settings tab. -->
     <string name="settings_status_on">On</string>

@@ -103,6 +103,30 @@ object Brand {
     /** Primary text on a light ground. Ink rather than black, matching [INK]'s hue. */
     const val ON_LIGHT = 0xFF11182B
 
+    /**
+     * Secondary text on a light ground — the light-theme twin of [ON_DARK_MUTED].
+     *
+     * A cobalt-biased grey, not a neutral one: a pure mid-grey beside this palette reads as
+     * unconsidered, and the bias is what makes secondary text look like it belongs to the same
+     * family as [COBALT] rather than like Material's default.
+     */
+    const val ON_LIGHT_MUTED = 0xFF5A6478
+
+    /**
+     * Hairlines, chart gridlines and empty-state art on a light ground — the twin of
+     * [ON_DARK_FAINT], and alpha-based for the same reason: it composites over whatever surface it
+     * lands on instead of assuming [CANVAS].
+     *
+     * ## Why the "quiet tier" exists (D78)
+     * Every other colour here is either IDENTITY (cap, brain, brim) or STATE (healthy/cracking/
+     * fried). There was no neutral — so a screen needing a divider, a gridline or a "nothing here
+     * yet" illustration had nowhere to get one and would have invented its own, which is exactly
+     * how the five drifting ARGB lists D58 consolidated came to exist. Adding the quiet tier here
+     * rather than in the Compose theme keeps the rule intact: the block screen and the bubble
+     * cannot read a theme, so a brand colour lives in this file or it does not exist.
+     */
+    const val ON_LIGHT_FAINT = 0x1F11182B
+
     /* --- Brain states (D36/D58) ---------------------------------------------------------- */
 
     /*

@@ -25,6 +25,31 @@ restored reprieve (new Run H).
 The block itself is proven, so a failure in these runs is a YouTube or a reprieve problem — it is no
 longer confounded by the block failing to draw at all.
 
+### Run K — first run opens on the welcome screen (D78)
+**Needs a FRESH INSTALL** (`adb uninstall com.scrollkiller` first) — the whole point is the
+first-run experience, and an upgrade deliberately skips it.
+- [ ] Fresh install → the app opens on **"How much do you actually scroll?"** with the healthy
+      mascot, a card reading **Today / 0**, and "Show me". It must NOT open on the disclosure.
+- [ ] The welcome asks for **nothing** — no permission prompt, no Settings deep-link, no toggle.
+- [ ] Tap "Show me" → the **disclosure** screen, unchanged. **Invariant 5:** the disclosure must
+      still appear before you are ever sent to Accessibility Settings. If tapping through lands on
+      the dashboard or the overlay step, stop — that is a Play-policy defect.
+- [ ] Kill the app from the welcome screen without tapping through, relaunch → welcome **again**
+      (the flag is written on the way out, so an unfinished launch does not consume it).
+- [ ] Tap through, then relaunch → welcome does **not** reappear.
+- [ ] **THE UPGRADE CASE.** Install the previous build, grant accessibility, then install this one
+      over it. It must open on the **dashboard** — an existing user must never be shown a
+      "here's what this app does" screen, which would read as the app having reset itself.
+
+### Run L — empty states (D78)
+- [ ] Fresh install with accessibility granted but nothing scrolled → Today's **"By app"** card
+      reads "Nothing counted yet…" rather than being a titled empty box.
+- [ ] The **Apps** tab shows its explanatory line, not a bare "Apps" heading over blank space.
+- [ ] Settings → **Clear all data** → both empty states return immediately.
+- [ ] Tone check: neither reads as an error. No red, no warning icon, no apology — nothing counted
+      is the app working, not failing.
+- [ ] Scroll one reel → both empty states are replaced by real rows.
+
 ### Run I — the ONE daily limit (D76)
 Per-platform limits are gone. One slider, one budget, summed across every blocking app.
 - [ ] Settings shows **one** "Daily scroll limit" slider, not one per app. Under it, a

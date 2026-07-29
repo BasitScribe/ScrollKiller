@@ -282,6 +282,16 @@ private fun TodayTab(
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                // Before this, an untouched install rendered this card as a titled empty box —
+                // which reads as something failing to load rather than as nothing having happened
+                // yet (D78). Nothing counted is this app's BEST outcome, so the copy explains
+                // what will fill it instead of apologising.
+                if (breakdown.isEmpty()) {
+                    EmptyState(
+                        title = stringResource(R.string.empty_today_title),
+                        body = stringResource(R.string.empty_today_body),
+                    )
+                }
                 breakdown.forEach { row ->
                     Row(
                         Modifier.fillMaxWidth(),
@@ -326,6 +336,11 @@ private fun AppsTab(breakdown: List<PlatformCount>, padding: PaddingValues) {
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
         )
+        // A bare heading over nothing was the worst of the three empty screens, because this tab is
+        // ONLY the bars — with no data there was literally nothing below the title (D78).
+        if (breakdown.isEmpty()) {
+            EmptyState(body = stringResource(R.string.empty_apps_body))
+        }
         breakdown.forEach { row ->
             ScrollBar(
                 label = row.displayName,
@@ -780,3 +795,44 @@ private const val HERO_TINT_ALPHA = 0.12f
 
 /** Height of the accent rule beside the guilt line, so it reads as a quote rather than a divider. */
 private const val GUILT_RULE_HEIGHT_DP = 44
+
+/**
+ * The shared "nothing here yet" block (D78).
+ *
+ * ## Tone is the whole design here
+ * An empty state in most apps means something is missing. In THIS app it means the user has not
+ * doomscrolled today, which is the outcome the entire product is trying to produce. So it must not
+ * borrow the visual language of failure — no error colour, no sad illustration, no "oops". It is
+ * deliberately quiet: [Brand.ON_LIGHT_FAINT]-weight rule, muted body text, no accent.
+ *
+ * It is also the first thing a brand-new user sees immediately after granting an Accessibility
+ * Service, so it doubles as reassurance that the app is working and simply has nothing to report.
+ *
+ * @param title optional — omitted where a heading already sits directly above (the Apps tab).
+ */
+@Composable
+private fun EmptyState(body: String, title: String? = null) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        // A hairline rather than a box or a card: this is an absence, and drawing a container
+        // around nothing makes the nothing look like a broken component.
+        HorizontalDivider(color = Color(Brand.ON_LIGHT_FAINT))
+        Spacer(Modifier.height(2.dp))
+        if (title != null) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+        Text(
+            text = body,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
