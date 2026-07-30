@@ -2,7 +2,7 @@
 
 > **Single entry point.** Living audit + index of every doc in the project. Pointers only — never a
 > dump of ROADMAP/DECISIONS.
-> Last audited: **2026-07-29** (Phase 2 · challenge suite COMPLETE 4/4 · brand pass done D58 · **YouTube NOW BLOCKS via the D73 override, reversing D57** · **ONE global daily limit across all blocking apps, D76 superseding the per-platform sliders** · **STRICT MODE — the free "5 more minutes" is deleted for good, D77; a sensorless device gets Exit alone and `BlockEscapeTest` pins that it stays escapable** · **✅ BLOCK SAGA CLOSED — D72 device-confirmed: the premature `isAttachedToWindow` check was the whole root cause, the ROM never refused anything, and block + challenge + exit are verified live. Invariant 6 demonstrated, not argued. D52/D70's ROM attribution is corrected.** Owed on device: HANDOFF Runs E/F (YT block + mis-gate), I (unified limit + migration), J (strict mode + the sensorless case). **Pass A of the appeal work SHIPPED (D78): welcome screen, quiet tier, empty states. Pass B (Insights) is deliberately NOT started — it needs range queries + streak logic + a ViewModel first, and is its own session.**)
+> Last audited: **2026-07-29** (Phase 2 · challenge suite COMPLETE 4/4 · brand pass done D58 · **YouTube NOW BLOCKS via the D73 override, reversing D57** · **ONE global daily limit across all blocking apps, D76 superseding the per-platform sliders** · **STRICT MODE — the free "5 more minutes" is deleted for good, D77; a sensorless device gets Exit alone and `BlockEscapeTest` pins that it stays escapable** · **✅ BLOCK SAGA CLOSED — D72 device-confirmed: the premature `isAttachedToWindow` check was the whole root cause, the ROM never refused anything, and block + challenge + exit are verified live. Invariant 6 demonstrated, not argued. D52/D70's ROM attribution is corrected.** Owed on device: HANDOFF Runs E/F (YT block + mis-gate), I (unified limit + migration), J (strict mode + the sensorless case). **Pass A SHIPPED (D78). Pass B1 — the DATA LAYER — SHIPPED (D80/D81): range queries, streaks, session rollup, DB v4. Pass B2 (the Insights SCREEN) is deliberately NOT started and is next session.**)
 
 ## Read order for a new session
 
@@ -20,7 +20,7 @@ reading them, that is a defect in *this file* — fix it here rather than openin
 
 | Don't | Instead |
 |---|---|
-| `DECISIONS.md` end to end (~225 KB, 79 ADRs) | The topic table below → read the 2–3 named `Dn` |
+| `DECISIONS.md` end to end (~238 KB, 82 ADRs) | The topic table below → read the 2–3 named `Dn` |
 | `ROADMAP.md`'s status log (historical, append-only) | The `← CURRENT` phase section only |
 | `HANDOFF.md` end to end (superseded runs are kept) | The `← CURRENT` block only |
 | Re-reading an ADR you already know is settled | Trust this file's one-line summary unless the task *changes* that area |
@@ -43,7 +43,7 @@ for f in CLAUDE.md HANDOFF.md docs/*.md ScrollKiller/*.md; do echo "$(grep -c '^
 | [../CLAUDE.md](../CLAUDE.md) | Invariants (the 6 non-negotiables), stack, conventions, session protocol | **Always, first.** It is short and it overrides everything |
 | **this file** | Project audit, phase status, package map, per-area summaries | **Always, second.** Orient here before opening anything else |
 | [ROADMAP.md](ROADMAP.md) | Phases, checkboxes, and an append-only session log | You need the CURRENT phase's open items. **Read the `← CURRENT` section only** — the status log is long and historical |
-| [DECISIONS.md](DECISIONS.md) | ADRs **D1…D79** (~225 KB), append-only, with a complete **75-line title index** at the top (75 = D1–D79 minus D61–D64, reserved) | You need *why* something is the way it is. **Never open this file whole — it is the single biggest token sink in the repo.** Use the topic table below to get candidate `Dn`s, then read only those. D55+ titles are greppable via `^\*\*D` |
+| [DECISIONS.md](DECISIONS.md) | ADRs **D1…D82** (~238 KB), append-only, with a complete **78-line title index** at the top (78 = D1–D82 minus D61–D64, reserved) | You need *why* something is the way it is. **Never open this file whole — it is the single biggest token sink in the repo.** Use the topic table below to get candidate `Dn`s, then read only those. D55+ titles are greppable via `^\*\*D` |
 | [../HANDOFF.md](../HANDOFF.md) | Manual on-device checklists, newest first | You are writing or running device verification. Only the `← CURRENT` block is live |
 | [SCHEMA.md](SCHEMA.md) | Server tables + sync flow | Phase 3+ backend work. Nothing in the app reads this yet |
 | [STORE_COPY.md](STORE_COPY.md) | Claims the Play listing may **not** make | Before writing any user-facing marketing copy, or pre-submission |
@@ -72,7 +72,7 @@ the markdown links do not already provide.
 
 ## Find the ADR without opening DECISIONS.md
 
-**This table is the point of this file.** `DECISIONS.md` is ~225 KB across 79 ADRs; loading it to
+**This table is the point of this file.** `DECISIONS.md` is ~238 KB across 82 ADRs; loading it to
 answer one "why" question is the most expensive mistake available in this repo. Look the topic up
 here, then read **only** the two or three `Dn` it names. Bold = the current, load-bearing decision
 for that area; the others are the history that led to it and are usually *not* worth re-reading.
@@ -92,13 +92,14 @@ for that area; the others are the history that led to it and are usually *not* w
 | Mascot / brand | D36, D58, **D37** | One `MascotArt` mapping; art is **height**-bounded and not square |
 | Onboarding / permissions | D13, D16, D51, D70, **D78** | **Welcome → disclosure → overlay → dashboard.** Value before the ask; the welcome requests nothing so invariant 5 holds. Route is a tested pure function (`OnboardingRoute`) |
 | Visual identity / UI polish | D58, **D78** | Palette sampled from the mascot, one source for both render paths. D78 adds the quiet neutral tier (`ON_LIGHT_MUTED`/`ON_LIGHT_FAINT`) for dividers, gridlines and empty states |
-| Data model / retention | D4, D14, **D65** | Aggregates forever, raw pruned 7d; displayed = server-acked + local unacked |
+| Data model / retention | D4, D14, **D65**, **D80** | Aggregates forever, raw pruned 7d; displayed = server-acked + local unacked. Time is rolled up daily into `daily_minutes` BEFORE the prune — compute while the evidence exists, keep only the answer |
+| Stats / streaks | **D81**, D80 | ⚑ Streaks are **provisional** on D14's interim day boundary and can shift in Phase 3 — derive them, never cache them as achievements |
 | Backend / CI / infra | D6, D59, **D60**, D66, D67, D68, D69, **D79** | Monorepo, path-filtered CI; security baseline before endpoint 1; Redis/FCM are Phase 4. Daemon JVM pinned by VERSION only — a bare vendor pin cannot start on CI, and foojay does not cover the daemon path |
 | Docs & vault conventions | **D56** | Index-first; markdown links in `docs/`, wikilinks in the vault |
 
 *(D61–D64 are reserved placeholders, deliberately unwritten — see D60's closing note.)*
 
-**Index is complete through D79** — 75 entries = D1–D79 minus the four reserved.
+**Index is complete through D82** — 78 entries = D1–D82 minus the four reserved.
 
 ---
 
@@ -376,7 +377,10 @@ state, not a bug; the test says so and names what to do when the next strategy i
 - `onResume` re-check; skip overlay + welcome-seen both persisted
 
 #### Dashboard (Compose Material3)
-- Tabs: **Today** (mascot + total + time + guilt + permission banner) / **Apps** / **Settings**
+- Tabs: **Today** (mascot + total + time + guilt + permission banner) / **Insights** (D82) / **Settings**
+- **Insights** replaced Apps (D82) — Apps was today-only and duplicated Today's "By app" card.
+  `InsightsViewModel` produces ONE immutable state per emission; bars are weighted `Box`es, not a
+  `Canvas`; today's bar composes `observeTodaySummary()` so it cannot disagree with the Today tab
 - **Empty states** (D78) on Today's breakdown card and the whole Apps tab. Tone rule: nothing
   counted is this app's BEST outcome, so they must not look like failure — hairline, no accent, no
   apology

@@ -41,7 +41,61 @@ interface DailyCountDao {
     @Query("SELECT * FROM daily_counts WHERE date = :date ORDER BY count DESC")
     fun observeCountsForDate(date: String): Flow<List<DailyCountEntity>>
 
+    /* --- RANGE queries (D80) ------------------------------------------------------------
+     *
+     * Everything above answers about ONE date. The rows have been kept forever since D4, but
+     * nothing could read further back than today — the history was stored and unreachable, which
+     * is the single blocker that stood between this app and an Insights screen.
+     *
+     * All three take an INCLUSIVE `from`..`to` rather than a day count. `BETWEEN` on the ISO-8601
+     * `yyyy-MM-dd` key is safe because that format sorts lexicographically in the same order it
+     * sorts chronologically — the reason D14 chose it. Passing a range instead of "7" or "30" means
+     * one query serves both windows and there is no second SQL statement to drift; the windows are
+     * the repository's business, not SQLite's.
+     */
+
+    /**
+     * One row per day in range with its total across every platform, oldest first — the Insights
+     * trend series.
+     *
+     * Days with NO activity are simply absent (a `daily_counts` row is created lazily on first
+     * increment). The caller fills the gaps with zero; SQL cannot generate missing dates without a
+     * recursive CTE, and doing it in Kotlin keeps this query readable and testable.
+     */
+    @Query(
+        "SELECT date AS date, COALESCE(SUM(count), 0) AS total FROM daily_counts " +
+            "WHERE date BETWEEN :from AND :to GROUP BY date ORDER BY date ASC",
+    )
+    fun observeDailyTotalsBetween(from: String, to: String): Flow<List<DailyTotal>>
+
+    /**
+     * Every `(date, platform)` row in range — the detail behind [observeDailyTotalsBetween], for a
+     * per-day per-app view. Ordered so a consumer can group by date without re-sorting.
+     */
+    @Query(
+        "SELECT * FROM daily_counts WHERE date BETWEEN :from AND :to " +
+            "ORDER BY date ASC, count DESC",
+    )
+    fun observeCountsBetween(from: String, to: String): Flow<List<DailyCountEntity>>
+
+    /**
+     * Totals per platform ACROSS the whole range, biggest first — the Insights per-app breakdown.
+     * Collapses the date dimension entirely, which is what makes it a different query rather than
+     * something the caller could fold from [observeCountsBetween] without walking every row.
+     */
+    @Query(
+        "SELECT platform AS platform, COALESCE(SUM(count), 0) AS total FROM daily_counts " +
+            "WHERE date BETWEEN :from AND :to GROUP BY platform ORDER BY total DESC",
+    )
+    fun observePlatformTotalsBetween(from: String, to: String): Flow<List<PlatformTotal>>
+
     /** Wipe all aggregate counts (Settings → Clear data). */
     @Query("DELETE FROM daily_counts")
     suspend fun deleteAll()
 }
+
+/** One day's grand total across platforms. Projection for [DailyCountDao.observeDailyTotalsBetween]. */
+data class DailyTotal(val date: String, val total: Int)
+
+/** One platform's total over a range. Projection for [DailyCountDao.observePlatformTotalsBetween]. */
+data class PlatformTotal(val platform: String, val total: Int)

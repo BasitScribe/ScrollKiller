@@ -25,6 +25,63 @@ restored reprieve (new Run H).
 The block itself is proven, so a failure in these runs is a YouTube or a reprieve problem — it is no
 longer confounded by the block failing to draw at all.
 
+### Run O — the Insights screen (D82)
+- [ ] The bottom nav reads **Today / Insights / Settings**. Apps is gone; its today-only bars live
+      on Today's "By app" card, so check nothing you relied on disappeared.
+- [ ] **7 days**: seven bars, one per day, oldest left. A day you did not scroll is a **hairline**,
+      not a gap — the axis must not silently compress.
+- [ ] The **limit line** is visible even when every bar is well under it. If it vanishes when you
+      are doing well, the plot is scaling to the bars instead of to `max(bar, limit)`.
+- [ ] A day over the limit is **orange**; **today is coral**. Confirm at a glance, without reading
+      numbers.
+- [ ] **CRITICAL — today's bar equals the Today tab's number.** Scroll a few reels, then switch
+      Today ⇄ Insights repeatedly. They must never disagree, even for a moment. A lower final bar
+      means the pending merge was bypassed (D35's defect class).
+      *(`RangeMergeTest` now pins this structurally on every build — the fake DAO answers the two
+      read paths with DIFFERENT numbers for today, so only the correct wiring passes, and it is
+      mutation-checked. This device check is now a confirmation rather than the only guard.)*
+- [ ] **Weekly**: about five bars. The last is labelled **"This week so far"** and is expected to be
+      shorter — that label is the whole point; without it a Tuesday reads as a collapse.
+- [ ] Only the LAST bar is partial. The first bar must be a full week, never a stub.
+- [ ] **Streak tiles**: cross your limit today → current streak drops to **0** immediately, and
+      **best** does not change. Stay under tomorrow → current becomes 1.
+- [ ] **Time tile**: shows a measured figure, with the caption "Time measured since …" while the
+      rollup is younger than the window. The caption should DISAPPEAR once rollups cover the whole
+      range (about a month out).
+- [ ] Switching 7 days ⇄ Weekly is instant and does not jank. No stutter while scrolling the screen.
+- [ ] **Empty state**: on a fresh install (or after Clear all data) Insights reads "Nothing to chart
+      yet" — no error colour, no empty chart frame.
+
+### Run M — the DB v4 upgrade does not lose data (D80)
+**This is the only run that matters this pass, and it CANNOT be tested by a fresh install** — a
+migration mismatch throws on the UPGRADE launch only. `MigrationSqlTest` guards the SQL text at
+build time; this checks the real upgrade on a real device.
+- [ ] **Upgrade, do not reinstall.** Install the PREVIOUS build, scroll a few reels so there is
+      data, then `adb install -r` this build over it. It must open normally.
+      A crash with `IllegalStateException: Migration didn't properly handle` is the failure this
+      run exists to catch — capture the whole trace.
+- [ ] **Today's count is unchanged** after the upgrade. `daily_counts` is untouched by v4; if the
+      number moved, something far worse than a migration bug happened.
+- [ ] `adb shell run-as com.scrollkiller sqlite3 databases/scrollkiller.db ".tables"` lists
+      **daily_minutes** alongside daily_counts, scroll_events and guilt_shown.
+- [ ] Scroll some reels, wait for a rollup pass (it runs at most hourly, on an advance), then
+      `SELECT * FROM daily_minutes;` — today's row exists and `seconds` is **plausible**: roughly
+      6s per reel for continuous scrolling, and NOT the wall-clock span since your first reel of the
+      day. A number close to "hours since you started" means session splitting is broken and the
+      Insights screen would report your whole day as scrolling.
+- [ ] Scroll again later the same day → today's row **updates** (REPLACE). Its `seconds` grows.
+- [ ] **Settings → Clear all data** → `daily_minutes` is empty too. A time history for days whose
+      counts were just wiped is a leak of exactly what the user asked to delete.
+
+### Run N — nothing regressed (D80 touches the write path)
+`record()` now calls `rollUpAndPrune` instead of `maybePrune`, so the counting path changed shape
+even though counting logic did not.
+- [ ] Instagram Reels still counts, live, at the same rate. The bubble ticks as before.
+- [ ] The block still fires at the limit (Runs E/F/I still pass).
+- [ ] No new jank while scrolling. The rollup reads at most 7 days of raw events and runs at most
+      once an hour on a background scope — but it is new work on the write path, so watch for a
+      stutter on the first advance of an hour.
+
 ### Run K — first run opens on the welcome screen (D78)
 **Needs a FRESH INSTALL** (`adb uninstall com.scrollkiller` first) — the whole point is the
 first-run experience, and an upgrade deliberately skips it.

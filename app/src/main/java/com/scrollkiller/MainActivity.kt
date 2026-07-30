@@ -10,6 +10,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.scrollkiller.guilt.GuiltLines
 import com.scrollkiller.ui.dashboard.DashboardScreen
 import com.scrollkiller.ui.dashboard.DashboardViewModel
+import com.scrollkiller.ui.dashboard.InsightsViewModel
 import com.scrollkiller.ui.onboarding.AccessibilityStatus
 import com.scrollkiller.ui.onboarding.DisclosureScreen
 import com.scrollkiller.ui.onboarding.OnboardingRoute
@@ -78,12 +79,14 @@ class MainActivity : ComponentActivity() {
                     )
                     OnboardingStep.DASHBOARD -> {
                         val dashboardViewModel: DashboardViewModel = viewModel()
+                        val insights: InsightsViewModel = viewModel()
                         // Held so onResume can refresh permission health on it (D51) — the same
                         // return-from-Settings mechanism the two flags above already use, extended
                         // to the banner so re-granting flips it without a restart.
                         dashboard = dashboardViewModel
                         DashboardScreen(
                             viewModel = dashboardViewModel,
+                            insightsViewModel = insights,
                             accessibilityEnabled = accessibilityEnabled.value,
                             canDrawOverlays = canDrawOverlays.value,
                             onOpenAccessibilitySettings = {
