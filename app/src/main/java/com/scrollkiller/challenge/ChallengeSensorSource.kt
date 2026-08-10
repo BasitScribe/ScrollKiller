@@ -66,5 +66,14 @@ object ChallengeSensors {
             SensorStrategy.ORIENTATION_HOLD -> OrientationHoldSource(context)
 
             SensorStrategy.PROXIMITY_HOLD -> ProximityHoldSource(context)
+
+            // Three more readings of the same accelerometer (D84). Separate sources rather than
+            // parameters on the existing two: each asks the hardware a genuinely different question
+            // — added motion, orientation CHANGES, and level-and-alive — see SensorStrategy.
+            SensorStrategy.ACCEL_SHAKE -> AccelShakeSource(context)
+
+            SensorStrategy.ORIENTATION_FLIPS -> OrientationFlipSource(context)
+
+            SensorStrategy.TILT_BALANCE -> TiltBalanceSource(context)
         }
 }

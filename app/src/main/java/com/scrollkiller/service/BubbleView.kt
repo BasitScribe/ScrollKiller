@@ -75,6 +75,27 @@ class BubbleView(context: Context) : LinearLayout(context) {
      */
     private var lastArt = 0
 
+    /**
+     * The motion layer. Everything it does is applied AFTER the content it decorates is already
+     * correct, so a cancelled or system-disabled animation costs nothing but the flourish — see
+     * [BubbleAnimator]'s class doc.
+     */
+    private val animator = BubbleAnimator(context.resources.displayMetrics.density)
+
+    /** Accent currently on the pill's background, or null before the first tint. */
+    private var lastAccent: Int? = null
+
+    /**
+     * The running tint crossfade, if any.
+     *
+     * Held because a `ValueAnimator` is NOT a view property animation: `settle()` cancels
+     * `view.animate()` and knows nothing about this one, so without a reference an abandoned
+     * crossfade would keep writing colours into a drawable belonging to a bubble that has since
+     * been hidden or re-rendered — the same class of leak `settle` exists to prevent, arriving
+     * through the one door it cannot see.
+     */
+    private var tintAnimator: android.animation.ValueAnimator? = null
+
     init {
         orientation = VERTICAL
         setBackgroundResource(R.drawable.overlay_bubble_bg)
@@ -165,12 +186,19 @@ class BubbleView(context: Context) : LinearLayout(context) {
         state: BrainState,
         headlineText: CharSequence?,
         guiltLine: CharSequence?,
+        reveal: BubbleMotion.Reveal? = null,
     ) {
         if (headlineText != null) headline.text = headlineText
+        // Order matters: setAccent reads `lastArt` to decide whether this is a state CHANGE, so it
+        // has to run before setMascot updates it. They are two halves of one transition and the
+        // whole point of the pairing is that they start on the same frame.
+        setAccent(state)
         setMascot(state)
-        // mutate() so tinting this instance doesn't affect the shared drawable constant.
-        background?.mutate()?.setTint(state.accentArgb.toInt())
         renderPanel(summary, guiltLine)
+        // Ordering is load-bearing: the text is set above, so the reveal decorates content that is
+        // ALREADY correct and can be cancelled at any frame without ever showing a stale line.
+        // Null means "no ceremony" — an ordinary count tick, which is most emissions.
+        if (reveal != null && headlineText != null) animator.revealLine(headline, reveal)
     }
 
     /**
@@ -184,6 +212,52 @@ class BubbleView(context: Context) : LinearLayout(context) {
         if (expanded == isExpanded) return
         isExpanded = expanded
         panel.visibility = if (expanded) VISIBLE else GONE
+        // The visibility flip above is the ONE window resize (D37). The animation below moves only
+        // the panel's contents inside a box that has already reached its final size — see
+        // BubbleAnimator.openPanel for why animating the box itself would be D30's churn per frame.
+        if (expanded) animator.openPanel(panel) else animator.settle(panel)
+    }
+
+    /** Acknowledge a tap on the pill, including the taps that correctly open nothing. */
+    fun acknowledgeTap() {
+        animator.acknowledgeTap(this)
+    }
+
+    /**
+     * The headline's live scale/alpha, for [BubbleProbe]'s state dump ONLY.
+     *
+     * These read the two properties a missed `settle()` would leave wrong. Anything other than 1.0
+     * here while nothing is animating means an animator was cancelled without its rest state being
+     * restored — which on this window is permanent, and is the defect class D86 built `settle` to
+     * make impossible. Exposed as named probe accessors rather than by widening `headline`'s
+     * visibility, so it stays obvious that nothing in production reads them.
+     */
+    fun headlineScaleForProbe(): Float = headline.scaleX
+
+    fun headlineAlphaForProbe(): Float = headline.alpha
+
+    /**
+     * Cancel every running animation and snap the tree back to rest.
+     *
+     * Called whenever the bubble's state changes out from under the motion — a nudge collapsing (the
+     * common case at a high count, where the next line can fire while the last reveal is still in
+     * flight), leaving the reel surface, the block coming up, the bubble being switched off, and
+     * teardown.
+     *
+     * ⚑ **`this` is deliberately NOT in the list.** The root's alpha is
+     * [OverlayController.setBubbleShown]'s hide-without-churn mechanism (D30), and settling the
+     * root would fight it — snapping a hidden bubble back to fully visible over somebody's video.
+     * Only children are settled, and a child's only correct opacity is 1.
+     */
+    fun settleMotion() {
+        animator.settle(headline, mascot, panel)
+        // The tint crossfade is a ValueAnimator, so `animator.settle` cannot see it — it only
+        // cancels view-property animations. Cancelled and then SNAPPED to its target rather than
+        // left wherever it stopped: an abandoned crossfade would leave the pill a colour that
+        // belongs to no BrainState at all, which is worse than either endpoint.
+        tintAnimator?.cancel()
+        tintAnimator = null
+        lastAccent?.let { background?.mutate()?.setTint(it) }
     }
 
     /** Cap the compact line's width so a guilt line wraps instead of spanning the screen. */
@@ -222,12 +296,57 @@ class BubbleView(context: Context) : LinearLayout(context) {
         }
     }
 
-    /** Swap the mascot art for [state], only when it actually changed. */
+    /**
+     * Swap the mascot art for [state], only when it actually changed.
+     *
+     * ## The FIRST art is set instantly; only CHANGES are animated
+     * `lastArt == 0` means this bubble has never drawn a mascot — it is being populated for its
+     * first frame, not reacting to anything. Animating that would mean the pill visibly assembles
+     * itself every time the user walks into Reels, which is several times an hour and is not a
+     * moment worth marking. A state CHANGE is: it happens at most twice a day (`BrainState` flips
+     * at 50 and at 150), it is the app's own escalation becoming visible, and it is the only thing
+     * on this surface that has genuinely earned a transition.
+     */
+    /**
+     * Move the pill's accent to [state]'s — instantly on the first draw, animated on a change.
+     *
+     * ## The bug this fixes, because it is worth naming
+     * This used to be `background?.mutate()?.setTint(...)` on every render: correct, and it SNAPPED.
+     * Once D86 animated the mascot, the two halves of one transition disagreed — the colour flipped
+     * on a single frame while the character was still mid-dip, so the eye caught the instant change,
+     * concluded the state had already flipped, and then watched the mascot arrive a third of a
+     * second late. **Animating one part of a composite and leaving the rest instant is worse than
+     * animating none of it**, because the mismatch reads as a glitch rather than as a missing
+     * feature. The crossfade runs for exactly [BubbleMotion.tintCrossfadeMs], which is derived from
+     * the mascot swap so the two cannot drift apart.
+     *
+     * `mutate()` is called ONCE here rather than on every render: it is what stops this instance's
+     * tint reaching the shared drawable constant, and calling it repeatedly allocates a fresh
+     * constant state on a path that runs per scroll.
+     */
+    private fun setAccent(state: BrainState) {
+        val target = state.accentArgb.toInt()
+        if (target == lastAccent) return
+        val previous = lastAccent
+        lastAccent = target
+        val drawable = background?.mutate() ?: return
+        tintAnimator?.cancel()
+        // First draw (or a bubble that has never been tinted): no previous colour to travel FROM,
+        // so animating would mean inventing a starting point. Same rule as the mascot's first art —
+        // a bubble being populated is not a bubble reacting.
+        if (previous == null || lastArt == 0) {
+            drawable.setTint(target)
+            return
+        }
+        tintAnimator = animator.crossfadeTint(this, previous, target).also { it.start() }
+    }
+
     private fun setMascot(state: BrainState) {
         val art = MascotArt.bubble(state)
         if (art == lastArt) return
+        val isFirstDraw = lastArt == 0
         lastArt = art
-        mascot.setImageResource(art)
+        if (isFirstDraw) mascot.setImageResource(art) else animator.swapMascot(mascot, art)
     }
 
     /**

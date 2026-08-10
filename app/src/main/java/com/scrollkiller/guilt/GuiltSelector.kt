@@ -14,11 +14,17 @@ import kotlin.random.Random
  *   shut, permanently.
  * @param wallMs `System.currentTimeMillis`. Drives the D47 7-day history, which is PERSISTED and
  *   so must stay comparable across reboots; `elapsedRealtime` resets to zero on every one.
+ * @param isPremium may this draw see premium lines (D85)? It rides here rather than being a field
+ *   on the selector because it is an AMBIENT FACT ABOUT THIS MOMENT, exactly like the day and the
+ *   two clocks — entitlement can lapse between one draw and the next, and a cached field would keep
+ *   serving paid lines to a user who stopped paying. Defaults to false so a test, or a future call
+ *   site, withholds paid content rather than leaking it.
  */
 data class GuiltNow(
     val dayKey: String,
     val monotonicMs: Long,
     val wallMs: Long,
+    val isPremium: Boolean = false,
 )
 
 /**
@@ -86,12 +92,21 @@ class GuiltSelector(
         val countToday: Int,
     )
 
-    /** The line every AMBIENT surface is currently showing, plus what it was drawn for. */
+    /**
+     * The line every AMBIENT surface is currently showing, plus what it was drawn for.
+     *
+     * [isPremium] joins the key for the same reason [locale] is in it: it is an input the draw
+     * depended on, so a change to it must invalidate the pin. Without it, a user whose entitlement
+     * lapsed would keep seeing the premium line already on screen until the tier or the day
+     * changed — which is a paid line shown to somebody who is no longer paying, and the pin is not
+     * the place to be lax about that.
+     */
     data class Pinned(
         val tier: GuiltTier,
         val dayKey: String,
         val packIdentity: String,
         val locale: GuiltLocale,
+        val isPremium: Boolean,
         val line: GuiltLine,
     )
 
@@ -151,13 +166,14 @@ class GuiltSelector(
             held.tier == tier &&
             held.dayKey == now.dayKey &&
             held.packIdentity == pack.identity &&
-            held.locale == locale
+            held.locale == locale &&
+            held.isPremium == now.isPremium
         ) {
             return held.line
         }
 
         val line = draw(pack, locale, GuiltSurface.AMBIENT, tier, count, now) ?: return null
-        pinned = Pinned(tier, now.dayKey, pack.identity, locale, line)
+        pinned = Pinned(tier, now.dayKey, pack.identity, locale, now.isPremium, line)
         pinStale = false
         return line
     }
@@ -190,7 +206,7 @@ class GuiltSelector(
         tier ?: return null
 
         val line = draw(pack, locale, GuiltSurface.AMBIENT, tier, count, now) ?: return null
-        pinned = Pinned(tier, now.dayKey, pack.identity, locale, line)
+        pinned = Pinned(tier, now.dayKey, pack.identity, locale, now.isPremium, line)
         pinStale = false
         return line
     }
@@ -259,7 +275,7 @@ class GuiltSelector(
         count: Int,
         now: GuiltNow,
     ): GuiltLine? {
-        val pool = pack.pool(surface, tier, locale)
+        val pool = pack.pool(surface, tier, locale, includePremium = now.isPremium)
         if (pool.isEmpty()) return null
 
         val burnt = history.shownSince(now.wallMs - NO_REPEAT_MS)

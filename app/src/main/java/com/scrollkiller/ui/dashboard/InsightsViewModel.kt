@@ -7,6 +7,8 @@ import com.scrollkiller.ScrollKillerApp
 import com.scrollkiller.data.PlatformRangeTotal
 import com.scrollkiller.data.SettingsPrefs
 import com.scrollkiller.service.PlatformRegistry
+import com.scrollkiller.stats.Milestone
+import com.scrollkiller.stats.Milestones
 import com.scrollkiller.stats.StreakCalculator
 import com.scrollkiller.stats.Streaks
 import com.scrollkiller.stats.TrendBucket
@@ -59,6 +61,8 @@ data class InsightsUiState(
     val rangeStart: LocalDate = LocalDate.now(),
     val rangeEnd: LocalDate = LocalDate.now(),
     val limit: Int = 100,
+    /** Derived every emission, never stored — see [com.scrollkiller.stats.Milestones] and D81. */
+    val milestones: List<Milestone> = emptyList(),
 ) {
     /** True when there is genuinely nothing to show — drives the empty state, not an error. */
     val isEmpty: Boolean get() = total == 0
@@ -123,8 +127,15 @@ class InsightsViewModel(app: Application) : AndroidViewModel(app) {
             repository.observePlatformTotalsBetween(start.toString(), today.toString()),
             repository.observeSecondsBetween(start.toString(), today.toString()),
             repository.observeEarliestRolledDate(),
-        ) { dailyTotals, platformTotals, seconds, earliestRolled ->
-            build(range, dailyTotals, platformTotals, seconds, earliestRolled, start, today, limit)
+            // ALL-TIME, not the visible window: a milestone asks "have you ever", which a windowed
+            // query cannot answer (D83). The trend above stays windowed so a 7-day chart can never
+            // report a 30-day best (D81).
+            repository.observeAllDailyTotals(),
+        ) { dailyTotals, platformTotals, seconds, earliestRolled, allTime ->
+            build(
+                range, dailyTotals, platformTotals, seconds, earliestRolled,
+                allTime, start, today, limit,
+            )
         }
     }
 
@@ -138,6 +149,7 @@ class InsightsViewModel(app: Application) : AndroidViewModel(app) {
         platformTotals: List<PlatformRangeTotal>,
         seconds: Long,
         earliestRolled: String?,
+        allTimeTotals: Map<String, Int>,
         start: LocalDate,
         today: LocalDate,
         limit: Int,
@@ -176,6 +188,14 @@ class InsightsViewModel(app: Application) : AndroidViewModel(app) {
             rangeStart = start,
             rangeEnd = today,
             limit = limit,
+            // Derived, never cached. A stored badge can become arithmetically false when Phase 3
+            // moves the day boundary (D81), and the app contradicting its own history is worse
+            // than showing no badge at all.
+            milestones = Milestones.of(
+                allTimeTotals.mapKeys { (date, _) -> LocalDate.parse(date) },
+                limit,
+                today,
+            ),
         )
     }
 }

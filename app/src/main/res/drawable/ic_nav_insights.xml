@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Bottom-nav glyph for the INSIGHTS tab.
+
+    ## Why this exists: the Insights tab was wearing the deleted Apps tab's icon
+    D82 replaced the Apps tab with Insights and reused `ic_nav_apps` on the grounds that
+    it "still means the breakdown by app". It does not any more. `ic_nav_apps` is a
+    HANDSET OUTLINE — it meant "your phone apps", which was right for a per-app list and
+    is wrong for a screen whose entire subject is a range of days. The tab that carries
+    the 7-day and weekly charts was pointing at a picture of a phone.
+
+    Rising bars, because that is literally what the screen draws (InsightsTab renders
+    weighted Boxes, one per day). The bars ASCEND left to right so the glyph reads as a
+    chart rather than as a signal-strength meter or a sort control.
+
+    Hand-written rather than pulled from material-icons-extended, for the reason
+    `ic_nav_apps` and `ic_nav_settings` already give: that dependency exists to be
+    searched, and shipping an artifact for a handful of 24dp shapes is a poor trade.
+
+    Tint is applied by the caller (NavigationBarItem colours it from the theme and from
+    selection state), so the fill here is white and never appears as-is — same contract
+    as the other two nav vectors.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFFFF">
+
+    <!-- Three ascending bars, all seated on the same baseline at y=20. Rounded tops
+         only would need per-corner radii and read as fussy at 24dp; fully rounded ends
+         match the pill language used elsewhere (Brand.RADIUS_PILL_DP). -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M5,13h2.4a1.2,1.2 0 0,1 1.2,1.2v4.6a1.2,1.2 0 0,1 -1.2,1.2h-2.4a1.2,1.2 0 0,1 -1.2,-1.2v-4.6a1.2,1.2 0 0,1 1.2,-1.2z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M10.8,9h2.4a1.2,1.2 0 0,1 1.2,1.2v8.6a1.2,1.2 0 0,1 -1.2,1.2h-2.4a1.2,1.2 0 0,1 -1.2,-1.2v-8.6a1.2,1.2 0 0,1 1.2,-1.2z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M16.6,4h2.4a1.2,1.2 0 0,1 1.2,1.2v13.6a1.2,1.2 0 0,1 -1.2,1.2h-2.4a1.2,1.2 0 0,1 -1.2,-1.2v-13.6a1.2,1.2 0 0,1 1.2,-1.2z" />
+
+</vector>

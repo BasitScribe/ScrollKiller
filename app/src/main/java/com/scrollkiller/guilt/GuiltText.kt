@@ -85,9 +85,17 @@ object GuiltText {
     /**
      * Words that only ever appear at count scale in this pack. Deliberately excludes one..nine,
      * which are idiomatic here — see the class doc.
+     *
+     * **`lakh` and `crore` were a real hole (D85).** The guard was written against an
+     * Indian-English pack that happened to use only English scale words, so a line reading "you
+     * have watched a lakh of these" would have sailed past every check and shipped exactly the D47
+     * bug the guard exists to prevent. It surfaced the moment the pack leaned harder into Hinglish,
+     * which is the argument for widening a guard when the CONTENT's register changes and not only
+     * when the code does.
      */
     private val SCALE_WORDS = Regex(
-        "\\b(twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|century|dozen)\\b",
+        "\\b(twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|" +
+            "century|dozen|lakh|lakhs|crore|crores)\\b",
         RegexOption.IGNORE_CASE,
     )
 

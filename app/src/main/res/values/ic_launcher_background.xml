@@ -1,6 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Solid background color for the adaptive launcher icon (see
-     mipmap-anydpi-v26/ic_launcher.xml). -->
+     mipmap-anydpi-v26/ic_launcher.xml).
+
+     ⚑ MIRRORS Brand.INK (ui/theme/Brand.kt, D58). It was #0B1021 — one digit off the
+     brand ink, which is the way a palette actually drifts: not by anyone choosing a
+     different colour, but by a near-miss nobody can see side by side. Corrected to
+     #0B1020. Brand.kt is the single place a brand colour is WRITTEN; a vector drawable
+     and a colour resource cannot read Kotlin, so this literal and the ones in
+     ic_launcher_foreground.xml are the same declared exception themes.xml already
+     takes for the window background — and, like that one, it is cross-commented on
+     both sides so the pair can only drift deliberately. -->
 <resources>
-    <color name="ic_launcher_background">#0B1021</color>
+    <color name="ic_launcher_background">#0B1020</color>
 </resources>

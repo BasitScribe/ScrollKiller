@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Round variant of the adaptive icon (for launchers that request round icons).
-     Same layers; the launcher applies a circular mask. -->
+     Same three layers; the launcher applies a circular mask. Kept in lockstep with
+     ic_launcher.xml — if one gains a layer and the other does not, a device that asks
+     for the round variant silently gets the older mark. -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@color/ic_launcher_background" />
     <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
 </adaptive-icon>

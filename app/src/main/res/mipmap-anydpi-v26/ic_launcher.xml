@@ -1,7 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Adaptive launcher icon (API 26+). The launcher composites the background
-     and foreground layers and applies its own mask (circle, squircle, etc.). -->
+     and foreground layers and applies its own mask (circle, squircle, etc.).
+
+     <monochrome> is what a themed launcher (Android 13+) uses instead of the
+     foreground. It is a separate drawable rather than a reuse of the foreground for a
+     reason worth knowing: the foreground distinguishes the scroll from the block by
+     COLOUR, and a monochrome treatment throws colour away — see the note in
+     ic_launcher_monochrome.xml. -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@color/ic_launcher_background" />
     <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
 </adaptive-icon>

@@ -44,9 +44,32 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/opt/venv/bin:$PATH"
 
-# A fixed high UID, not a name lookup. Kubernetes and some scanners assert on the
-# numeric UID, and `runAsNonRoot` cannot verify a username.
-RUN groupadd --gid 10001 app \
+# ⚑ tzdata IS A HARD RUNTIME DEPENDENCY OF THIS SERVICE, not an optional nicety.
+#
+# This is a *-slim base, which strips the IANA timezone database. `zoneinfo` does
+# not carry its own copy — it reads the system one — and this service's entire job
+# is filing every count against a date in the USER's timezone (invariant 2). With
+# no database, every user's timezone is unresolvable and every count is misdated.
+#
+# The nasty part is that nothing crashes on its own: the container starts, the
+# health probe passes, and it quietly serves wrong dates. So `app/timezones.py`
+# asserts the database is present at startup and REFUSES TO BOOT without it —
+# which means that without this line the deploy fails outright rather than
+# subtly. That is the intended trade (loud beats subtle), and this line is the
+# fix the exception message names.
+#
+# Installed in the RUNTIME stage, not the builder: the venv is what gets copied
+# forward, and /usr/share/zoneinfo is not in it.
+#
+# Combined with the useradd into one layer, and the apt lists removed in the same
+# RUN, so no package index survives into the shipped image for Trivy to scan or
+# for anyone to reuse.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends tzdata \
+    && rm -rf /var/lib/apt/lists/* \
+    # A fixed high UID, not a name lookup. Kubernetes and some scanners assert on
+    # the numeric UID, and `runAsNonRoot` cannot verify a username.
+    && groupadd --gid 10001 app \
     && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin app
 
 WORKDIR /srv/app

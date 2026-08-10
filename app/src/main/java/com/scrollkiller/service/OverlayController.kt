@@ -13,9 +13,12 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.WindowManager
+import com.scrollkiller.BuildConfig
 import com.scrollkiller.brain.BrainState
+import com.scrollkiller.brain.MascotArt
 import com.scrollkiller.challenge.ChallengeAvailability
 import com.scrollkiller.challenge.ChallengeController
+import com.scrollkiller.challenge.ChallengeEscalation
 import com.scrollkiller.challenge.ChallengeHaptics
 import com.scrollkiller.challenge.ChallengeRegistry
 import com.scrollkiller.challenge.ChallengeSpec
@@ -25,6 +28,7 @@ import com.scrollkiller.data.SettingsPrefs
 import com.scrollkiller.data.TodaySummary
 import com.scrollkiller.guilt.GuiltCadence
 import com.scrollkiller.guilt.GuiltLines
+import com.scrollkiller.guilt.GuiltTier
 import com.scrollkiller.permission.BlockUnavailableNotifier
 import com.scrollkiller.permission.PermissionHealthReader
 import kotlinx.coroutines.CoroutineScope
@@ -335,6 +339,8 @@ class OverlayController(
         collectScope = null
         nudgeHandler.removeCallbacksAndMessages(null)
         nudging = false
+        // Animators hold a reference to the view they run on; the window is about to be removed.
+        bubble?.settleMotion()
         GuiltLines.endBlockEpisode()
         challenge.stop()          // the service is going away; the sensor must not outlive it
         block.destroy()
@@ -398,7 +404,10 @@ class OverlayController(
             count = forLimit,
             limit = limit,
             gatingActive = spec.blocksAtLimit,
-            graceUntilMs = SettingsPrefs.graceUntilMs(context, platform),
+            // ONE reprieve, not one per app (D88). The limit above is already global (D76), so a
+            // per-platform grace meant the user paid the challenge price once and got let out of
+            // one app — switch to YouTube and the block was waiting. Same currency both sides.
+            graceUntilMs = SettingsPrefs.graceUntilMs(context),
             nowMs = System.currentTimeMillis(),
         )
         when (overlay) {
@@ -525,7 +534,24 @@ class OverlayController(
         // The mascot stays put and has ALREADY escalated via renderCount, so the nudge reads as
         // the mascot saying the line. Headline text is what changes here; the panel behind it
         // carries the same line and is filled by renderCount either way.
-        view.render(lastSummary, BrainState.forCount(count), headlineText = line, guiltLine = line)
+        //
+        // HOW it arrives is BubbleMotion's call, not this method's: the style is a pure function of
+        // the line and the tier, so the same line at the same intensity always enters the same way
+        // and a test pins it. Seeding on the rendered line rather than on a counter is what stops
+        // the entrances cycling in a visible order — and the tier is what makes the motion carry
+        // information, since a line that pops in has told you something about your count before you
+        // have read a word of it.
+        val reveal = BubbleProbe.revealOverride() ?: BubbleMotion.revealFor(
+            seed = line,
+            tierLevel = GuiltTier.forCount(count)?.level ?: 1,
+        )
+        view.render(
+            lastSummary,
+            BubbleProbe.stateFor(count),
+            headlineText = line,
+            guiltLine = line,
+            reveal = reveal,
+        )
         view.post { applyPlacement(remeasure = true) }
         nudgeHandler.postDelayed({ collapseNudge() }, GuiltCadence.DISPLAY_MS)
     }
@@ -535,6 +561,11 @@ class OverlayController(
         if (!nudging) return
         nudging = false
         bubble?.let { view ->
+            // Settle FIRST. At a high count the cadence floor is every five scrolls, so a reveal
+            // can still be in flight when its own line's display window expires — and a reveal that
+            // outlives its line would animate the *count* into place using the line's entrance.
+            // Cancelling before the re-render, not after, is what keeps the two from ever crossing.
+            view.settleMotion()
             view.setHeadlineMaxWidth(Int.MAX_VALUE)
             renderCount(view, lastSummary)
             view.post { applyPlacement(remeasure = true) }   // the pill shrinks back; re-clamp
@@ -563,6 +594,13 @@ class OverlayController(
     private fun setBubbleShown(view: BubbleView, shown: Boolean) {
         if (shown == bubbleShown) return
         bubbleShown = shown
+        // ⚑ THE single place motion is stopped when the bubble goes away, and it is here rather
+        // than at the four callers on purpose. Hiding is alpha 0 with the surface kept ALIVE (D30),
+        // so a child animator still in flight keeps running against an invisible pill and leaves
+        // that child scaled or translated when the bubble comes back — the next entry would draw a
+        // pill assembled out of half-animated parts. Every hide path funnels through this method,
+        // so one call here cannot be forgotten by a fifth caller added later.
+        if (!shown) view.settleMotion()
         view.alpha = if (shown) 1f else 0f
         val params = layoutParams ?: return
         params.flags = if (shown) {
@@ -632,7 +670,7 @@ class OverlayController(
      * otherwise offer a challenge that cannot run.
      */
     private fun onOpenChooser() {
-        val available = ChallengeAvailability.available(context)
+        val available = offerable()
         if (available.isEmpty()) {
             Log.w(TAG, "chooser: nothing available; staying on the block")
             return
@@ -641,11 +679,51 @@ class OverlayController(
     }
 
     /**
+     * The challenges this device can run, each already raised to the rung today's reprieves have
+     * earned it (D83).
+     *
+     * ## Rotation cannot dodge it
+     * Each spec is charged its OWN reprieves plus a share of every other challenge's
+     * ([ChallengeEscalation.effectiveUses]), so cycling walk → jump → face-down → forehead still
+     * raises the whole ladder while the one being leaned on stays strictly hardest. Both numbers
+     * come from ONE preferences snapshot: read separately they could straddle midnight and price a
+     * fresh challenge as though it had been used.
+     *
+     * The total sums every enabled challenge, not just the available ones — a reprieve earned this
+     * morning with a challenge whose permission was revoked since was still a reprieve.
+     *
+     * ## Escalation is applied HERE and exactly once
+     * The target is read in four places — the chooser row's label, the challenge prompt, the
+     * ring's label, and the [com.scrollkiller.challenge.ChallengeProgress] the sensor counts into.
+     * Handing an "effective target" to all four alongside the spec is precisely how the prompt
+     * ends up promising sixty seconds while the engine counts thirty, which is the drift D50's
+     * format-string rule exists to prevent. Escalating the SPEC once, at the only point a
+     * challenge is offered, means every one of those call sites keeps reading `spec.target` and
+     * none of them has to learn that escalation exists.
+     *
+     * Availability is untouched by it — [ChallengeAvailability] asks about hardware and
+     * permissions and reads no target — so a device that could offer nothing before still offers
+     * nothing, and a device that could offer four still offers four. Escalation can make a
+     * challenge harder; it can never make one disappear, and it never touches Exit.
+     */
+    private fun offerable(): List<ChallengeSpec> {
+        val uses = SettingsPrefs.challengeUsesToday(context)
+        val total = uses.values.sum()
+        return ChallengeAvailability.available(context).map { spec ->
+            val own = uses[spec.id] ?: 0
+            ChallengeEscalation.escalated(spec, ownUses = own, otherUses = total - own)
+        }
+    }
+
+    /**
      * A challenge was picked. Swap the block window's content to it and start the sensor.
      *
      * @param spec what the user picked, or NULL for "Surprise me" — the draw happens here because
      *   which challenges are available is not the view's business. [ChallengeRegistry.surpriseMe]
      *   excludes [lastSurpriseId] so two consecutive surprises are never the same challenge.
+     *   A picked spec arrives ALREADY ESCALATED (the chooser row closed over the one [offerable]
+     *   built), and the surprise draws from [offerable] for the same reason — so both paths carry
+     *   the same rung and neither can hand the sensor a base target the user was never shown.
      *
      * If the sensor refuses to start we stay on the chooser rather than showing a ring that can
      * never move — a user standing in their kitchen jumping at a frozen 0/10 concludes the app is
@@ -654,7 +732,7 @@ class OverlayController(
      */
     private fun onChooseChallenge(spec: ChallengeSpec?) {
         val chosen = spec ?: ChallengeRegistry.surpriseMe(
-            candidates = ChallengeAvailability.available(context),
+            candidates = offerable(),
             avoid = lastSurpriseId,
         ) ?: return
         if (spec == null) lastSurpriseId = chosen.id
@@ -709,14 +787,22 @@ class OverlayController(
         // user gets — the ring they earned is pointing at a table — and it is what tells them to flip
         // the phone over at all.
         haptics.complete()
-        val platform = currentPlatform ?: return
+        // Escalate BEFORE hideBlock, which routes through challenge.stop() and nulls `active`.
+        // Read from the controller rather than from a captured spec so what escalates is provably
+        // the challenge that just completed, and note it on COMPLETION only — the user who opened
+        // the chooser, read the rows and backed out bought nothing and is charged nothing (D83).
+        challenge.active?.let { SettingsPrefs.noteChallengeCompleted(context, it.id) }
+        // Write the reprieve BEFORE anything that can return early. It is global now (D88), so it
+        // does not need a platform — and it must not depend on one: the user finished the exercise,
+        // so the fifteen minutes are owed whether or not we still know which surface they are on.
+        // Previously `currentPlatform ?: return` sat above this line and could swallow a reprieve
+        // somebody had just done twenty steps for.
         SettingsPrefs.setGraceUntilMs(
             context,
-            platform,
             System.currentTimeMillis() + BlockLimits.CHALLENGE_GRACE_MS,
         )
         hideBlock("challenge completed")
-        render(platform, lastSummary)
+        currentPlatform?.let { render(it, lastSummary) }
     }
 
     /**
@@ -773,7 +859,10 @@ class OverlayController(
      * everything is already correct when [collapseNudge] restores the number.
      */
     private fun renderCount(view: BubbleView, summary: TodaySummary) {
-        val state = BrainState.forCount(summary.total)
+        // BubbleProbe.stateFor IS BrainState.forCount in a release build — the override branch does
+        // not exist there. In debug it lets an adb command force CRACKING/FRIED, which is the only
+        // practical way to see the mascot transition without scrolling to 50 and then to 150.
+        val state = BubbleProbe.stateFor(summary.total)
         view.render(
             summary,
             state,
@@ -781,6 +870,55 @@ class OverlayController(
             // The panel's line, on every emission. Cheap: GuiltLines.current is pinned and only
             // redraws on a tier/day/pack/locale change, so this is a field read almost always.
             guiltLine = GuiltLines.current(context, summary.total),
+        )
+    }
+
+    /* --- DEBUG probe hooks (see BubbleProbe) ------------------------------------------------ */
+
+    /**
+     * Re-render the bubble with whatever [BubbleProbe] currently says the state is.
+     *
+     * No new data is fetched — it re-runs the render against `lastSummary`, so a forced state flip
+     * goes through exactly the same path a real crossing of 50 or 150 would, animation included.
+     * That equivalence is the point: a probe that took a shortcut would prove nothing about the
+     * code that actually runs.
+     */
+    internal fun probeRefresh() {
+        if (!BuildConfig.DEBUG) return
+        bubble?.let { renderCount(it, lastSummary) }
+    }
+
+    /** Fire one guilt line immediately, so a reveal can be watched without reaching a tier. */
+    internal fun probeNudge() {
+        if (!BuildConfig.DEBUG) return
+        val view = bubble ?: return
+        // Uses the pinned CURRENT line rather than inventing a string, so what is exercised is the
+        // real content path — a probe that fired "test test test" would not catch a wrapping or
+        // token-substitution problem, which is half of what the reveal is displaying.
+        val line = GuiltLines.current(context, lastSummary.total)
+            ?: "Probe line — the app is silent below ${BrainState.CRACKING_AT}."
+        showNudge(view, lastSummary.total, line)
+    }
+
+    /** Dump the bubble's internal state as one greppable block. See [BubbleProbe.report]. */
+    internal fun probeReport() {
+        if (!BuildConfig.DEBUG) return
+        val view = bubble
+        val derived = BrainState.forCount(lastSummary.total)
+        val drawn = BubbleProbe.stateFor(lastSummary.total)
+        val art = MascotArt.bubble(drawn)
+        BubbleProbe.report(
+            count = lastSummary.total,
+            derived = derived,
+            drawn = drawn,
+            artRes = art,
+            artName = runCatching { context.resources.getResourceEntryName(art) }
+                .getOrDefault("<unresolved>"),
+            bubbleShown = bubbleShown,
+            nudging = nudging,
+            expanded = view?.isExpanded == true,
+            animatorScale = view?.headlineScaleForProbe() ?: -1f,
+            animatorAlpha = view?.headlineAlphaForProbe() ?: -1f,
         )
     }
 
@@ -909,6 +1047,12 @@ class OverlayController(
      */
     private fun toggleExpanded(view: BubbleView) {
         val expand = !view.isExpanded
+        // Acknowledge the tap BEFORE the early return, and deliberately so. The refusal below is
+        // correct behaviour that is indistinguishable from a dead overlay — and "the bubble does
+        // nothing when I touch it" is a complaint this project has already earned twice, from two
+        // different permission bugs (D51, D70). Ninety milliseconds of press-in is the difference
+        // between "nothing to show yet" and "this app is broken".
+        view.acknowledgeTap()
         if (expand && !view.hasBreakdown(lastSummary)) return
         setExpanded(view, expand)
     }

@@ -20,10 +20,514 @@ Nothing below in the attach-timing section needs re-running unless a future chan
 `BlockScreenController.show`. What DOES remain open is the YouTube calibration (Run E) and the
 restored reprieve (new Run H).
 
-## ← CURRENT: the unified limit + strict mode (D76/D77), and the YouTube block (D73)
+## ← CURRENT: the device-debt session — Runs Q, P and M in one sitting
 
-The block itself is proven, so a failure in these runs is a YouTube or a reprieve problem — it is no
-longer confounded by the block failing to draw at all.
+> ⚑ **RUN LETTERS WERE RENAMED, and this is the only place that says so.** The D83/D84/D85 runs were
+> first written as K/L/M, which collided with three runs that already existed — **Run K** is D78's
+> welcome screen, **Run L** is D78's empty states, **Run M** is D80's DB-v4 upgrade. The letters had
+> wrapped without anyone noticing. The new ones continue past O:
+>
+> | Was | Is now | Covers |
+> |---|---|---|
+> | ~~Run K~~ | **Run P** | D83 — escalation ladder + the 6.5s guilt display |
+> | ~~Run L~~ | **Run Q** | D84 — shake / flip / balance on real hardware |
+> | ~~Run M~~ | **Run R** | D85 — the tripled pack + premium gating |
+>
+> **Run M keeps its letter and its meaning: D80's DB v4 upgrade**, which is the migration run, and
+> it is PARTIALLY passed already — see its own section below for the two steps still owed.
+
+### The session, in order
+
+Do them in this order. Q is first because it carries the only real risk in the set — three sensor
+thresholds that have never met a human — and because a threshold change there means a rebuild, which
+you want to discover before you have spent an hour on the ladder.
+
+| # | Run | Why this slot | Rough time |
+|---|-----|---------------|-----------|
+| 1 | **Q** (D84) | Highest risk. New detectors, and a bad threshold is a rebuild | 25 min |
+| 2 | **P** (D83) | Needs many block cycles; the clock trick makes it fast | 30 min |
+| 3 | **S** (D86) | The bubble's motion. Needs a long ordinary scroll, which Q and P do not give you | 20 min |
+| 4 | **M** (D80) | Needs a *different* APK, so it goes last — it wipes the app | 20 min |
+| — | **R** (D85) | Free: just read the guilt lines while doing Q, P and S | — |
+
+⚑ **Run S is third, not first, even though it is the newest.** Q and P are the ones that can send you
+back to a rebuild, so they go before anything that costs an uninterrupted stretch of scrolling — and
+S needs exactly that: a long ordinary session at a high count with the limit set HIGH, which is the
+opposite of the low-limit setup every other run below assumes. Do not try to fold it into Q or P.
+
+### Off-device pre-flight — done 2026-08-04, do not redo on the phone
+
+Everything in this list was checkable without hardware and has been checked against the source, not
+against the docs. It is recorded here so device time is spent only on what a device can answer.
+
+- ✅ **Escalation arithmetic re-derived for the seven-row suite** against `ChallengeEscalation`
+      (`effectiveUses` + `targetFor`, cap and both curves). The result is Run P's new expectation
+      table. It found one stale thing and one design consequence:
+      **(a)** Run P's checklist still expected a **four**-row chooser at base — corrected;
+      **(b)** D83's worked example ("a lap leaves walk 40 / jump 30") assumed a suite of four, and
+      D84 made a lap cost 4 charged uses instead of 2. Not a bug, but it is a **judgement call the
+      device run should now answer deliberately**, and the lever is `GLOBAL_DIVISOR`, not
+      `CAP_MULTIPLE`. Both are named in Run P.
+- ✅ **Every guilt-pack number PROJECT_MAP claims is true of the JSON.** 155 lines; free pools
+      **24 / 24 / 40 / 48** and with premium **26 / 26 / 45 / 58**, exactly as documented; 136 free +
+      19 premium; **no duplicate ids**; **no bare integers and no `lakh`/`crore`** anywhere in the
+      text (the build test's rule, confirmed independently); longest line **83 chars**, comfortably
+      under the 110 cap. Run R's wrapping check is therefore about *font scale*, not about length.
+- ✅ **PRIDE lines exist at intensity 4 and are `free`** — Run R's "a free user still gets a way out
+      at every tier" is structurally satisfied; the device check is now confirmation, not discovery.
+- ✅ **Chooser order** matches `ChallengeRegistryTest`'s pin: walk · jump · shake · flip · face down ·
+      forehead · balance.
+- ✅ **Fence balance is EVEN in every doc** (D56) after these edits.
+- ✅ **`.gitignore`** now covers the two editor-noise files — see the commit plan for the `git rm
+      --cached` that makes it take effect.
+- ⚠️ **The unit suite was NOT run here** — no Android SDK or Kotlin toolchain off your machine. The
+      407/41 figure is still the last known state, so `./gradlew testDebugUnitTest` below is a real
+      gate, not a formality.
+
+### Setup, once, before anything
+
+```
+# JAVA_HOME must point at the Android Studio JBR — it is not on PATH
+export JAVA_HOME="/c/Program Files/Android/Android Studio/jbr"
+./gradlew testDebugUnitTest assembleDebug          # 407 tests must be green first
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb logcat -c && adb logcat -s ScrollKiller:*      # keep this open in a second window
+```
+
+**Set the daily limit to its minimum (20) in Settings → the block then costs you 20 reels instead of
+100.** Every run below assumes that. The limit is one global number across IG and YT (D76), so those
+20 can come from either app.
+
+**Getting past a reprieve without waiting 15 minutes:** a completed challenge writes a persisted
+wall-clock deadline, so winding the device clock **forward** ~16 minutes expires it and the next reel
+re-blocks. Winding it *backwards* extends your own reprieve instead — that direction is a self-harm
+cheat, not a shortcut. ⚑ **Do not cross midnight while doing Run P**: escalation resets on the day
+key, and you will silently lose the ladder you were building.
+
+---
+
+### Run T — one exercise gets you out of EVERY app (D88) — ⚑ NOT YET RUN, HIGHEST PRIORITY
+
+This is a **reported bug fix**, so it outranks everything else in this file: it is the only run here
+verifying something a real user actually hit rather than something a test predicted.
+
+**Setup:** limit at its minimum (20). Both Instagram and YouTube installed and blocking.
+
+- [ ] ⚑ **THE REGRESSION.** Scroll to the limit **in Instagram** → block → complete any challenge →
+      you are let out. Now **immediately open YouTube Shorts and scroll**. It must **NOT** block.
+      That is the whole bug: before D88 it blocked instantly, because the reprieve was keyed to
+      Instagram and the count is global.
+- [ ] **And the other way round.** Do it again earning the reprieve in YouTube, then check Instagram.
+- [ ] **The window is ONE window, not one per app.** After the fifteen minutes lapse, BOTH apps must
+      block again. If YouTube is still free after Instagram has re-blocked, there are two deadlines
+      and the fix did not land.
+- [ ] **Nothing became leaky.** With no reprieve and the count over the limit, both apps must still
+      block. Going global must not have bought a free pass.
+- [ ] **Upgrade case.** Earn a reprieve on the OLD build, install this one over it with
+      `adb install -r`, and scroll: the reprieve must still be honoured, in both apps. That is the
+      legacy-key fallback; if you get blocked immediately, the fallback is wrong.
+- [ ] **Clear data drops it.** Settings → Clear all data during an active reprieve → the next reel
+      past the limit blocks.
+- [ ] **A SHADOW app is unaffected.** TikTok/Snapchat still never block, at any count, reprieve or
+      not. Gating stays per-platform on purpose.
+
+### Run S — the bubble moves, and the icon changed (D86) — ⚑ NOT YET RUN
+
+**The one thing this run exists to answer: is the motion actually CHEAP on a real phone?** Everything
+else here is a look-at-it check. The budget is unit-tested, only draw-time properties are animated,
+and the panel's box is not animated at all — but "no relayout" is an argument, and a mid-range phone
+inside a real Instagram session is the only thing that can turn it into a fact. If the video stutters
+when a line lands, the design is wrong, not the tuning.
+
+**Trigger:** scroll Instagram past 50 (tier 1 speaks), then past 150 (tier 4, where the pushy styles
+live). Set the limit high for this run so the block does not keep interrupting — this is the bubble's
+run, not the block's.
+
+#### ⚑ TRIAGE FIRST — "the mascot never changes and there are no animations"
+
+That report was made against a build that **cannot contain any of this**, so start here before
+treating it as a defect. In order, cheapest first:
+
+1. **Did you install the new APK?** D86's code was written after the last install. `./gradlew
+   assembleDebug && adb install -r ...`, then **toggle the accessibility service off and on** — the
+   bubble is created by a long-lived service and an `adb install -r` does not necessarily restart it.
+2. **Are you above the thresholds?** The mascot changes at **exactly two counts, 50 and 150**
+   (`BrainState`), and the app is deliberately **silent below 50** (D41) — so under 50 there is no
+   guilt line, therefore no reveal, therefore no animation, and the mascot correctly never moves.
+   A test at count 12 shows precisely nothing and both symptoms are the design.
+3. **Ask the app what it thinks.** This is what the D86 probe is for — do not keep guessing:
+
+```
+# what does the bubble actually believe right now?
+adb shell am broadcast -p com.scrollkiller -a com.scrollkiller.BUBBLE --es report on
+
+# force the mascot through its states without scrolling to 50 and then 150
+adb shell am broadcast -p com.scrollkiller -a com.scrollkiller.BUBBLE --es state cracking
+adb shell am broadcast -p com.scrollkiller -a com.scrollkiller.BUBBLE --es state fried
+adb shell am broadcast -p com.scrollkiller -a com.scrollkiller.BUBBLE --es state off
+
+# fire one line with a chosen entrance, at any count
+adb shell am broadcast -p com.scrollkiller -a com.scrollkiller.BUBBLE --es reveal pop
+```
+
+The report prints the count, `BrainState.forCount(count)`, what is being DRAWN, the actual drawable
+name, and the headline's live alpha/scale. It turns one unanswerable report into three different
+findings that need three different fixes:
+
+| Report says | Meaning | Fix |
+|---|---|---|
+| `count` under 50, `drawn=HEALTHY` | Working correctly. Nothing should change yet | none — scroll further, or force a state |
+| `drawn` ≠ `BrainState.forCount(count)` and not FORCED | The render path is genuinely wrong | a real bug, report it |
+| forcing `cracking` changes nothing on screen | Old build, or the service did not restart | re-install, toggle accessibility off/on |
+| `alpha`/`scale` ≠ 1.0 with `nudging=false` | A `settle()` was missed | a real bug, and the one D86 most feared |
+| Nothing logs at all | The service is not running the new code | re-install; check `adb logcat -s ScrollKiller` |
+
+4. **Animator duration scale.** Developer options → *Animator duration scale*. If it is **OFF**,
+   every animation in this run completes instantly and correctly, and looks exactly like "there are
+   no animations". Worth checking before anything else on a phone that has ever been speed-tweaked —
+   several Indian ROMs ship it off by default in their battery-saver profiles.
+
+| If it feels wrong | File | Constant | Which way |
+|---|---|---|---|
+| The entrance is too slow / in the way | `BubbleMotion.kt` | `REVEAL_MS` (180) | **Lower** ⚑ never raise past the budget test |
+| The pop bounces too much | `BubbleAnimator.kt` | `OVERSHOOT_TENSION` (1.1) | **Lower** ≈ flatter |
+| The mascot swap is too abrupt | `BubbleMotion.kt` | `MASCOT_OUT_MS`/`MASCOT_IN_MS` | **Raise** — not budget-bound, it fires twice a day |
+| The mascot vanishes / looks broken | `BubbleMotion.kt` | `MASCOT_DIP_SCALE` (0.72) | **Raise** toward 1 |
+| The panel snaps in | `BubbleMotion.kt` | `PANEL_MS` (160) / `PANEL_RISE_DP` (8) | **Raise** slightly |
+| Tab switches feel draggy | `DashboardScreen.kt` | `TAB_TRANSITION_MS` (180) | **Lower** |
+
+- [ ] ⚑ **NO JANK. The whole point.** Scroll normally through a stretch where lines fire often (past
+      150, where the cadence is every five scrolls). The video underneath must not stutter when a
+      line arrives, when the mascot changes, or when you tap the pill. If it does, report it — the
+      fix is not a shorter duration, it is that something is animating a layout.
+- [ ] **Lines arrive in different ways, and it is not random.** Watch a run of lines at tier 4: some
+      rise, some pop, some sweep in from the side. A **plain fade at tier 4 is a bug** — the palette
+      drops it there on purpose.
+- [ ] **The same line always enters the same way.** If you see one repeat across days, its entrance
+      should be identical. Different entrances for one line means the seeding is broken.
+- [ ] **Tier 1 is calm.** Cross 50 on a fresh day: the first line the app ever says that day should
+      just fade in. Nothing should bounce at 50.
+- [ ] ⚑ **The line is still readable.** This is the D83 regression check. The entrance must be over
+      well before you finish the sentence — if you are reading *around* an animation, the budget is
+      being spent wrong even though the test passes.
+- [ ] ⚑ **A reveal never outlives its line.** At a high count, lines fire faster than they display.
+      Watch for the count animating into place using a line's entrance — that is a settle that did
+      not happen, and it is the single most likely defect in this change.
+- [ ] **Mascot change at 50 and at 150.** It should dip, TILT, exchange and come back as one
+      movement. You must NOT be able to see both drawables, and it must not blink out to nothing.
+      It must finish perfectly level — a pill resting at a slight angle is a bug, not a flourish.
+- [ ] ⚑ **The pill's COLOUR travels with the mascot (D87).** At 50 the accent goes mint → orange, at
+      150 orange → red. Both must **crossfade across the whole swap**, not snap. If the colour
+      changes on one frame and the mascot arrives after it, that is the exact defect D87 fixed —
+      report it. Easiest check: `--es state cracking` then `--es state fried` back to back.
+- [ ] **No colour is left stranded.** Force a state change and leave Instagram mid-crossfade. Come
+      back: the pill must be one of the three real accent colours, never something in between.
+- [ ] **First entry does not animate.** Walk into Reels fresh: the pill appears with its mascot
+      already there. It must not visibly assemble itself — that happens several times an hour.
+- [ ] **Tap acknowledgement, including the tap that does nothing.** Early in the day with no counts,
+      tap the pill: it should press in and not expand. That is correct behaviour, and the press is
+      the only thing distinguishing it from a dead overlay.
+- [ ] ⚑ **The bubble is never left half-animated.** Fire a line, then IMMEDIATELY leave Instagram
+      mid-animation. Come back. The pill must be fully opaque, unscaled and unshifted. Repeat with:
+      leaving while the panel is open, and hitting the block while a line is showing.
+- [ ] **Hiding still works.** The bubble must still disappear on leaving a reel surface and come back
+      on returning. If it ever comes back *invisible*, or flashes visible during a tap, the
+      root-alpha rule was broken — report loudly, that is D30's mechanism.
+- [ ] **Panel opens with its contents rising, and closes instantly.** The box must not grow; only
+      what is inside it should move. An instant close is correct, not a missing animation.
+- [ ] **Animator-off device.** Developer options → Animator duration scale **OFF**, then repeat the
+      first four boxes. Everything must still be correct, just instant. Nothing may be stuck
+      invisible — that would mean an animation is doing work the render does not do.
+- [ ] **The launcher icon is the new mark** — a chevron over a coral bar on dark ink, no purple
+      anywhere. Check on the home screen AND in the app drawer.
+- [ ] **Themed icons.** On Android 13+, turn on themed icons in wallpaper settings: the icon must
+      become a tinted silhouette in which the chevron and the bar are still two distinct shapes. A
+      solid blob means the monochrome layer is wrong.
+- [ ] **The Insights tab icon is bars, not a phone.** And the Today tab is still the untinted mascot
+      head.
+- [ ] **Tabs slide in the direction you moved, on a SPRING (D87).** Today → Insights comes in from
+      the right; going back comes in from the left, and it should settle with a slight give rather
+      than stopping dead. Then do Run O's critical check again (switch Today ⇄ Insights repeatedly):
+      the numbers must still never disagree — the transition must not be masking a frame of stale
+      data. If the spring feels too loose, the lever is `DampingRatioLowBouncy` →
+      `DampingRatioNoBouncy` in `DashboardScreen`; if it feels slow, `StiffnessMediumLow` →
+      `StiffnessMedium`.
+- [ ] **Fast tab mashing does not accumulate.** Switch tabs rapidly back and forth. A spring is
+      interruptible by design and should retarget smoothly; visible stacking or a tab that ends up
+      offset from centre is worth reporting.
+- [ ] **Large font scale + the new lines.** At the largest accessibility font size, a long tier-4
+      line must still wrap rather than truncate on the bubble.
+- [ ] **The new slang reads right.** Sixty-two new tier-4 lines, leaning harder into Hinglish. Same
+      rule as Run R: savage, never cruel. Note the id from logcat if any line lands wrong.
+
+### Run R — the tripled guilt pack + premium gating (D85) — ⚑ NOT YET RUN
+
+Content and a gate. Nothing here can trap anyone — the guilt pack does not touch the block — so this
+is the lowest-risk of the outstanding runs, and **most of it rides along free**: Runs Q and P will
+take you past 50, 70, 100 and 150 many times over, so read what comes up and note ids from logcat.
+Only the premium-flip item needs deliberate action:
+
+```
+adb shell run-as com.scrollkiller cat shared_prefs/scrollkiller_settings.xml | grep premium_override
+# flip it: force-stop, set premium_override to true in that file, relaunch
+```
+
+- [ ] **The new voice reads right on a real phone.** Scroll past 50, 70, 100 and 150 and read what
+      comes up. It should sound like a friend roasting you in Hinglish, not like an app. If any line
+      lands as *cruel* rather than *savage*, note the id from logcat — D9's anti-uninstall rule is
+      the one that outranks being funny.
+- [ ] **Lines fit the panel.** The new ones are capped at 110 characters, but a real device at a
+      large font scale is the only honest check for wrapping or truncation on the bubble nudge and
+      on the block screen.
+- [ ] **Nothing repeats within a session** even though the pack is now much bigger — the rotation
+      should feel more varied than before, not less.
+- [ ] ⚑ **A free user must NEVER see a premium line.** This is the gate. Default state is free
+      (`premium_override` is false), so nothing tagged premium should appear at all. Sample ids from
+      logcat across a long session and check none of them are the premium ones.
+- [ ] **Flip the stub and the extra lines appear.** `premium_override` true → the pool widens and
+      new lines start showing. Flip it back → they stop, **including the one currently pinned on
+      Home** (entitlement is part of the pin key, so it must not linger).
+- [ ] **A free user still gets a way out at every tier.** At 150+, confirm PRIDE lines still appear —
+      the encouraging ones must not have quietly ended up premium-only.
+- [ ] **Tier 3 no longer exhausts.** Spend a day past 100 and watch logcat: the
+      `guilt pool exhausted: .../STRONG` warning should NOT fire any more. If it does, the tier-3
+      closure is wrong and `GuiltPoolMathTest` is lying.
+- [ ] Tier 4 exhaustion is still EXPECTED on a heavy day (48 free lines of a 150 target) and should
+      still log loudly. Seeing that warning is correct, not a regression.
+
+### Run Q — the three new challenges (D84) — ⚑ PRIORITY, NEVER RUN ON HARDWARE
+
+Three brand-new sensor detectors, none of which has ever run on hardware. The unit tests prove the
+arithmetic against synthetic samples; only a phone can say whether the thresholds match real human
+motion, which is the entire risk here. **Every "must NOT count" item below is an anti-cheat — if one
+fails, that challenge is theatre and should be pulled rather than shipped loose.**
+
+**Trigger:** scroll 20 reels on Instagram → the block draws → tap **"Earn your way out — 15
+minutes"** → the chooser. It should list **seven** rows in this order — walk · jump · shake · flip ·
+face down · forehead · balance — plus "Surprise me". Pick the row you are testing. To go round
+again, complete or Back out, then wind the clock forward 16 minutes and scroll one more reel.
+
+**One tuning table for the whole run.** Every constant below is a single number in a pure Kotlin
+file with a unit test beside it; changing one is a rebuild and nothing else.
+
+| If it feels wrong | File | Constant | Which way |
+|---|---|---|---|
+| Shake too hard to trigger | `ShakeDetector.kt` | `SHAKE_ON` (6.0) | **Lower** ≈ easier |
+| A lazy wave completes it | `ShakeDetector.kt` | `SHAKE_ON` (6.0) | **Raise** ≈ stricter |
+| One shake counts as several | `ShakeDetector.kt` | `SHAKE_OFF` (2.5) / `REFRACTORY_MS` (120) | **Raise** either |
+| Full turns not registering | `FlipDetector.kt` | `SETTLED_Z` (7.0) | **Lower** ≈ less turn needed |
+| A wobble counts as a flip | `FlipDetector.kt` | `SETTLED_Z` (7.0) | **Raise** ≈ more turn needed |
+| A table completes balance | `BalanceDetector.kt` | `MIN_TREMOR` (0.06) | **Raise** ⚑ the important one |
+| A steady hand is refused | `BalanceDetector.kt` | `MIN_TREMOR` (0.06) | **Lower** |
+| Balance too fussy about level | `BalanceDetector.kt` | `MAX_LATERAL` (2.5 ≈ 15°) | **Raise** ≈ more tilt allowed |
+
+**Shake (`shake_30`)**
+- [ ] Shaking properly completes it, and the ring moves smoothly rather than in lumps. Roughly seven
+      seconds of committed shaking should do it at base.
+- [ ] ⚑ **A lazy wave must NOT count.** Waggle the phone gently side to side for fifteen seconds —
+      the ring must stay at 0. This is the anti-cheat; if a wave clears it, `SHAKE_ON` is too low.
+- [ ] ⚑ **A phone lying on a table must NOT count**, including when the table is knocked.
+- [ ] Holding the phone at a steady angle (not moving) must NOT count — that is the gravity filter.
+- [ ] One vigorous shake must not score five. If the count leaps in bursts, the hysteresis or the
+      refractory is mistuned.
+
+**Flip (`flip_10`)**
+- [ ] Turning the phone fully over and back five times completes it — ten counts, not five. Confirm
+      the prompt's wording matches what actually happens.
+- [ ] ⚑ **Rocking the phone side to side without turning it over must NOT count.** This is the dead
+      band; if a wobble scores, `SETTLED_Z` is too small.
+- [ ] Starting face-up must not award a free count — the ring must read 0/10 when the challenge opens.
+- [ ] A slow, deliberate turn counts exactly once, not several times as it passes through vertical.
+
+**Balance (`balance_20`)** — *the one most likely to need retuning*
+- [ ] Holding the phone flat on an open palm completes it in twenty seconds.
+- [ ] ⚑ **A phone resting flat on a table must NOT complete it.** This is the softest guard in the
+      suite and the single most important line in this run. If a table completes it, raise
+      `BalanceDetector.MIN_TREMOR` — one constant.
+- [ ] ⚑ **But a genuinely steady hand must NOT be refused either.** If holding it properly leaves the
+      ring stuck at 0, `MIN_TREMOR` is too high — and the false FAIL is the worse of the two errors,
+      because it reads as the app being broken.
+- [ ] Tilting past roughly 15° resets the timer, and it resets to zero rather than pausing.
+- [ ] Holding it level but face-DOWN must not count (that is the face-down challenge).
+
+**All three**
+- [ ] ⚑ **Invariant 6 on each new panel** — Exit and hardware Back both work from a running shake,
+      flip and balance challenge, each logging its `TAP <n>` → `TAP <n> → <outcome>` pair.
+- [ ] Escalation applies to them like the rest: complete shake, come back, the row reads **40**.
+- [ ] Cancelling drops progress rather than banking it — start one, get halfway, Back out, re-enter,
+      the ring is at 0.
+- [ ] No sensor is left registered. After completing or cancelling each, the battery/sensor usage
+      should show nothing held open.
+
+### Run P — the escalating punishment + the longer guilt display (D83) — ⚑ NOT YET RUN
+
+**The one judgement call this whole session exists to answer:** with walk pinned at **80 steps** and
+both holds at **120 seconds**, is the top of the ladder *strict but doable*, or is it a wall? The
+arithmetic is settled and the cap is proven in tests. Whether it is a challenge or a refusal is a
+thing only a thumb on a phone can report, and it is the one item here that no test can ever cover.
+
+**The lever is one constant:** `ChallengeEscalation.CAP_MULTIPLE`, currently **4**.
+
+| Verdict | Change | Result |
+|---|---|---|
+| Too harsh / reads as a wall | `CAP_MULTIPLE = 3` | walk 60 · jump 30 · holds 90s · shake 90 |
+| About right | leave at **4** | walk 80 · jump 40 · holds 120s · shake 120 |
+| Too soft, gets absorbed | `CAP_MULTIPLE = 5` | walk 100 · jump 50 · holds 150s · shake 150 |
+
+⚑ Before raising it past 4, re-read why the **holds** cap where they do: a break RESETS the timer
+(D54), so failure probability compounds with duration and a long hold surrenders everything to one
+twitch near the end — with the ring pointing at a table where you cannot see it happen. If walk-80
+feels fine but holds-120s feels cruel, that is the signal that the *shared* multiple is wrong for
+durations, and the fix is a per-curve cap rather than moving one number for all seven.
+
+**Reaching the top of the ladder without twelve block cycles.** Do at least **two real completions
+first** — that proves the writer, which the shortcut bypasses — then jump the counter:
+
+```
+adb shell run-as com.scrollkiller cat shared_prefs/scrollkiller_settings.xml   # inspect
+# to jump: force-stop, edit challenge_uses_walk_20 to 6 and challenge_uses_day to today (YYYY-MM-DD),
+# then relaunch. walk should read 80 on the next chooser.
+adb shell am force-stop com.scrollkiller
+```
+
+Effective uses = own + (everyone else's ÷ 2), so **walk 80 needs six charged uses** — six walks, or
+four walks plus four of anything else.
+
+Piece 1 of the five-days-of-real-use set. Everything here is JVM-tested (407 green across 41
+suites); what a device adds is whether the numbers *feel* right and whether invariant 6 still holds
+at the top of the ladder, which is the only check in this run that can fail dangerously.
+
+- [ ] **The line is readable now.** Scroll past a tier threshold and read a fired guilt line to the
+      end without hurrying. It should collapse back to the count *after* you finish, not mid-
+      sentence. This is the whole point of the change — if it still cuts you off, the fix is one
+      constant (`GuiltCadence.DISPLAY_MS`) and the gap follows it automatically.
+- [ ] **Lines arrive less often, and that is expected.** At a high count the practical ceiling is
+      now ~7.5 lines a minute rather than ~11. Confirm the bubble still feels insistent rather than
+      quiet; if it feels quiet, that is a *cadence* question (`GuiltCadence.SCHEDULE`, in scrolls),
+      NOT a reason to shorten the display again.
+⚑ **These expectations were re-derived against `ChallengeEscalation` for the SEVEN-row suite, and
+they are not the numbers D83's prose quotes.** D83 was written when the suite was four, so its
+worked example ("a full lap leaves walk 40 / jump 30 / both holds 120s") describes a lap of FOUR.
+D84 took the suite to seven without anyone re-running the arithmetic, and a lap is now
+`own 1 + other 6 ÷ 2 = 4` charged uses instead of 2 — so rotation escalates the set roughly twice as
+fast as the ADR's example implies. Nothing is broken by that (the cap still holds and leaning is
+still strictly harder than rotating), but the table below, not D83's prose, is what the chooser
+should actually read. **The lever if the pacing feels wrong at seven rows is
+`ChallengeEscalation.GLOBAL_DIVISOR`, currently 2** — raising it to 3 restores four-suite pacing for
+the counting challenges. It cannot change the holds: `DOUBLE` with `CAP_MULTIPLE = 4` has only three
+rungs by construction (30s → 60s → 120s), so both holds reach their cap at **two** effective uses
+whatever the divisor is. That is D83's design, not a D84 regression — but it does mean the top of the
+ladder arrives by the fourth reprieve of the day, which is sooner than this run used to imply.
+
+| After | walk | jump | shake | flip | face down | forehead | balance |
+|---|---|---|---|---|---|---|---|
+| **fresh day (base)** | 20 | 10 | 30 | 10 | 30s | 30s | 20s |
+| one walk | **30** | 10 | 30 | 10 | 30s | 30s | 20s |
+| two walks | **40** | 20 | 40 | 20 | 60s | 60s | 40s |
+| four walks (leaning) | **60** | 30 | 50 | 30 | 120s | 120s | 80s |
+| six walks (walk at cap) | **80** | 40 | 60 | 40 | 120s | 120s | 80s |
+| one full lap of seven | 60 | 40 | 70 | 40 | 120s | 120s | 80s |
+
+- [ ] **The first rung is the base.** Hit the limit on a fresh day → tap through to the chooser →
+      the **seven** rows must read **walk 20 · jump 10 · shake 30 · flip 10 · face down 30s ·
+      forehead 30s · balance 20s**, in that order (effort first, passive last — D84).
+- [ ] **The second rung is escalated.** Complete **walk**. Scroll past the 15-minute reprieve until
+      the block returns → open the chooser → the walk row must now read **30**. All six others must
+      still be at base — one reprieve elsewhere is charged at *half*, and half of one rounds down
+      to zero, so a single completion must not move the rest of the set.
+- [ ] **The second reprieve moves everything.** Complete **walk** a second time. Now every row must
+      have climbed exactly one rung — walk 40, jump 20, shake 40, flip 20, both holds 60s, balance
+      40s: two reprieves elsewhere is charged as one use. This is the rotation guard — if the
+      untouched rows are still at base after two completions, the split charge is not wired up.
+      ⚑ Use the *same* challenge twice here, not two different ones: walk-then-jump leaves walk at
+      30 (own 1 + other 1 ÷ 2 = 1) and would read as a failure when it is correct.
+- [ ] **Rotation costs more than it used to, and leaning still costs most.** Complete one full lap
+      of all seven. The chooser should then read the bottom row of the table — **walk 60 · jump 40 ·
+      shake 70 · flip 40 · holds 120s · balance 80s**, with jump and flip already pinned at their
+      caps. Compare against leaning: on a fresh day, complete walk four times → **walk 60** while
+      jump sits at **30**. Within a curve, the leaned-on challenge must always be strictly hardest.
+- [ ] **The prompt and the ring agree.** Start the escalated walk. The prompt sentence and the
+      ring's target must BOTH say 30. A prompt saying one number while the ring counts to another
+      is the exact drift the escalate-the-whole-spec design exists to prevent — report it loudly.
+- [ ] **A hold doubles.** On a fresh day, complete **face down 30s**, come back, and the row must
+      read **60s** — not 40s. Holds double; only the counting challenges step by ten.
+- [ ] **Backing out costs nothing.** Open the chooser, then hardware-Back out of it without
+      completing anything. Re-open: every row must be unchanged. Escalation is charged on
+      completion only.
+- [ ] **The cap holds.** Keep completing walk across a day (or set the limit low to reach it
+      faster). It must stop at **80** and never go past it. Face down must stop at **120s**. If a
+      hold ever offers 240s, stop and report — that is the invariant-6 guard failing.
+- [ ] **⚑ INVARIANT 6 AT THE TOP OF THE LADDER.** With walk pinned at 80 and both holds at 120s:
+      **Exit** and hardware **Back** must still work from the block panel, from the chooser, and
+      from a running challenge — each logging its `TAP <n>` → `TAP <n> → <outcome>` pair. A hard
+      challenge is the design; a screen you cannot leave is a **P0**, and difficulty must never be
+      able to become a trap.
+- [ ] **Daily reset.** Wind the device date forward one day (the same trick the guilt-rotation run
+      uses), then hit the limit. Every row must be back at base — the table's top row, all seven of
+      **20 / 10 / 30 / 10 / 30s / 30s / 20s**. Wind it back
+      and the counters should stay reset rather than reviving yesterday's rungs.
+- [ ] **Clear data resets it too.** Settings → Clear data, then hit the limit: base targets again.
+- [ ] **Sensorless case is unchanged.** On a device (or with permissions revoked) where no
+      challenge is available, the block panel must still be **Exit and nothing else** — escalation
+      must not have introduced a row that cannot run.
+
+### After the runs pass — commit and merge
+
+⚑ **There is no branch stack.** D83, D84 and D85 are all sitting UNCOMMITTED on `newMain` — 30
+modified files and 12 untracked ones, one working tree, zero feature branches. `newMain` and `main`
+are the same commit (`7b6190e`) and both match origin. So the job is not a merge sequence, it is a
+**commit plan**, and it should not be run until the device runs pass — a green device is what turns
+three piles of edits into three defensible commits.
+
+```
+git switch -c feat/five-days-punishment-and-content     # from newMain
+```
+
+Three commits, each carrying its own code, its own tests and its own ADR line. `docs/DECISIONS.md`
+appends one line per ADR in order, so `git add -p` splits it cleanly:
+
+| # | Message | Code | Tests |
+|---|---|---|---|
+| 1 | `feat(guilt,challenge): 6.5s display and escalating challenge targets (D83)` | `GuiltCadence`, `GuiltPoolMath`, `ChallengeEscalation`, `ChallengeSpec`, `SettingsPrefs`, `OverlayController`, `DashboardViewModel` | `ChallengeEscalationTest`, `GuiltCadenceTest` |
+| 2 | `feat(challenge): shake, flip and balance — the suite goes 4 to 7 (D84)` | `ShakeDetector`, `FlipDetector`, `BalanceDetector`, the three `*Source`s, `ChallengeSensorSource`, `ChallengeAvailability`, `strings.xml` | `ShakeDetectorTest`, `FlipDetectorTest`, `BalanceDetectorTest`, `ChallengeRegistryTest` |
+| 3 | `feat(guilt): pack 72 to 155 lines, tier 3 closed, premium gated on access (D85)` | `guilt_pack.json`, `GuiltPack`, `GuiltPackParser`, `GuiltText`, `GuiltSelector`, `GuiltLines`, `Entitlements`, `SettingsPrefs` | `GuiltPackTest`, `GuiltTextTest`, `GuiltPoolMathTest` |
+| 4 | `feat(overlay,ui): the bubble moves, and the launcher gets a real mark (D86)` | `BubbleMotion`, `BubbleAnimator`, `BubbleView`, `OverlayController`, `DashboardScreen`, `ic_launcher_foreground`, `ic_launcher_monochrome`, `ic_launcher(_round)`, `ic_launcher_background`, `ic_nav_insights` | `BubbleMotionTest` |
+| 5 | `feat(guilt): tier 4 goes 48 to 103 free lines (D86)` | `guilt_pack.json`, `tools/guilt_author.py` | `GuiltPoolMathTest` |
+
+`ChallengeSpec.kt` and `SettingsPrefs.kt` are touched by more than one — split those by hunk. So is
+`GuiltPoolMathTest.kt` (commit 3 rewrote its pins, commit 5 moves them again) and `guilt_pack.json`
+(commit 3 is D85's 83 lines, commit 5 is D86's 62) — both split cleanly by hunk because every pack
+change is an append.
+
+⚑ **Commit 4 must also `git rm` a drawable**: `ic_nav_apps.xml` is now unreferenced. It was the Apps
+tab's handset glyph, which Insights had been wearing since D82 and no longer is. Leaving an orphaned
+resource in a repo that goes public post-launch (D68) is exactly the kind of thing that gets read as
+"nobody is looking".
+
+Then one docs commit for `PROJECT_MAP`/`ROADMAP`/`HANDOFF`/`DECISIONS`/vault, plus whatever the
+device runs changed.
+
+**Do NOT commit** `.idea/misc.xml` or `ScrollKiller/.obsidian/core-plugins.json` — editor noise.
+✅ **Both are now in `.gitignore`** (done off-device, with a comment each saying why). ⚑ **That
+alone does nothing**: `.gitignore` only governs UNTRACKED files, and both of these are already
+tracked, so they will keep showing up as modified until they are also removed from the index. Do
+this in the docs commit — `--cached` leaves the files on disk, it only stops git watching them:
+
+```
+git rm --cached .idea/misc.xml "ScrollKiller/.obsidian/core-plugins.json"
+git checkout -- .idea/misc.xml 2>/dev/null || true   # discard the local churn either way
+```
+
+```
+./gradlew testDebugUnitTest assembleDebug compileReleaseKotlin   # green before pushing
+git push -u origin feat/five-days-punishment-and-content
+gh pr create --base main                                        # CI runs on the PR (D59 path filters)
+```
+
+⚑ **`main` and `newMain` are duplicates at the same SHA and that is a trap waiting to fire.** Pick
+one as trunk before this PR lands, or the next merge silently diverges them. `main` is the stated PR
+base, so the cheap fix is to merge there and fast-forward `newMain` after — and then delete
+`newMain`, or make it a tracking alias, rather than leaving two names for one thing.
 
 ### Run O — the Insights screen (D82)
 - [ ] The bottom nav reads **Today / Insights / Settings**. Apps is gone; its today-only bars live
@@ -52,10 +556,45 @@ longer confounded by the block failing to draw at all.
 - [ ] **Empty state**: on a fresh install (or after Clear all data) Insights reads "Nothing to chart
       yet" — no error colour, no empty chart frame.
 
-### Run M — the DB v4 upgrade does not lose data (D80)
-**This is the only run that matters this pass, and it CANNOT be tested by a fresh install** — a
-migration mismatch throws on the UPGRADE launch only. `MigrationSqlTest` guards the SQL text at
-build time; this checks the real upgrade on a real device.
+### Run M — the DB v4 upgrade does not lose data (D80) — ⚑ PARTIAL PASS, TWO STEPS OWED
+
+> **Status from the 2026-08-03 session on A015.** Boxes 1–3 PASSED: `user_version` went 3→4 with no
+> migration crash, the app opened on the **dashboard and not the welcome screen** (the real D78
+> upgrade case), today's counts survived intact at **IG 50 + YT 10 = 60**, and `.tables` listed
+> `daily_minutes`. **Still owed: the last three boxes** — a post-scroll `SELECT * FROM daily_minutes`
+> proving `seconds` is per-reel and not wall-clock, the same row growing on a second pass, and
+> Clear-all-data emptying it. Those are the ones that catch a *silently wrong number* rather than a
+> crash, which is why they are worth going back for.
+
+**Building the OLD APK.** The baseline is **`03cebae`** — "feat: one global scroll limit, and strict
+mode on the block". It is the right commit for two reasons at once: it predates `2fa8f13` (which
+added `daily_minutes`), so its DB is **v3**; and it predates `1e11f0e` (the welcome screen), so
+installing over it also exercises **D78's upgrade path** — an existing user must land on the
+dashboard, never on the first-run welcome. Use a worktree so your current tree is untouched:
+
+```
+git worktree add ../sk-old 03cebae
+cd ../sk-old && ./gradlew assembleDebug
+cp app/build/outputs/apk/debug/app-debug.apk /tmp/old-debug.apk
+cd -                                  # back to the real tree
+
+adb uninstall com.scrollkiller        # clean slate — this run needs a TRUE v3 install
+adb install /tmp/old-debug.apk
+# grant accessibility + overlay, scroll ~20 IG reels and ~10 YT Shorts, note both numbers
+adb shell run-as com.scrollkiller sqlite3 databases/scrollkiller.db "PRAGMA user_version;"   # must be 3
+
+./gradlew assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk    # -r = UPGRADE, never uninstall first
+```
+
+**Pass/fail on screen, before you touch sqlite** — if any of these is wrong the DB checks are moot:
+the app **opens**; it lands on the **dashboard, not the welcome screen**; today's per-app numbers are
+**the same numbers you noted**; the nav reads Today / Insights / Settings and Insights renders.
+
+If `sqlite3` is missing on the device (common on stock ROMs), pull the file instead:
+`adb shell run-as com.scrollkiller cat databases/scrollkiller.db > sk.db` and open it on the PC.
+
+When done: `git worktree remove ../sk-old`.
 - [ ] **Upgrade, do not reinstall.** Install the PREVIOUS build, scroll a few reels so there is
       data, then `adb install -r` this build over it. It must open normally.
       A crash with `IllegalStateException: Migration didn't properly handle` is the failure this
@@ -101,7 +640,7 @@ first-run experience, and an upgrade deliberately skips it.
 ### Run L — empty states (D78)
 - [ ] Fresh install with accessibility granted but nothing scrolled → Today's **"By app"** card
       reads "Nothing counted yet…" rather than being a titled empty box.
-- [ ] The **Apps** tab shows its explanatory line, not a bare "Apps" heading over blank space.
+- [ ] The **Insights** tab shows its empty-state copy ("Nothing to chart yet"), not a bare heading over blank space.
 - [ ] Settings → **Clear all data** → both empty states return immediately.
 - [ ] Tone check: neither reads as an error. No red, no warning icon, no apology — nothing counted
       is the app working, not failing.

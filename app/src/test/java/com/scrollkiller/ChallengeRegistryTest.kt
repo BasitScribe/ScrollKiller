@@ -48,7 +48,8 @@ class ChallengeRegistryTest {
             ChallengeRegistry.IMPLEMENTED.all { it in declared },
         )
         assertEquals(
-            "steps D50, accel peaks D53, orientation hold D54, proximity hold D55 — the suite is complete",
+            "steps D50, accel peaks D53, orientation hold D54, proximity hold D55, " +
+                "shake/flips/tilt-balance D84 — every declared strategy is built",
             declared,
             ChallengeRegistry.IMPLEMENTED,
         )
@@ -72,11 +73,11 @@ class ChallengeRegistryTest {
     }
 
     @Test
-    fun `all four challenges ship - the suite is complete`() {
-        // Pinned by name: each session's scope was ONE challenge end to end, and a spec appearing
-        // without its acceptance runs is exactly the thing to catch. All four are now verified, so
-        // this count going UP means a fifth arrived without its device runs.
-        assertEquals(4, ChallengeRegistry.enabled.size)
+    fun `all seven challenges ship`() {
+        // Pinned by name. The original four were one-challenge-per-session and are all device
+        // verified; the three added at D84 are NOT yet — see HANDOFF Run Q. This count going up
+        // means an eighth arrived, and it should not without its device runs.
+        assertEquals(7, ChallengeRegistry.enabled.size)
 
         val walk = ChallengeRegistry.forId("walk_20")
         assertNotNull("walk_20 must exist", walk)
@@ -110,6 +111,33 @@ class ChallengeRegistryTest {
         assertEquals(SensorStrategy.PROXIMITY_HOLD, forehead.sensorStrategy)
         assertEquals(ProgressUnit.SECONDS, forehead.unit)
 
+        val shake = ChallengeRegistry.forId("shake_30")
+        assertNotNull("shake_30 must exist", shake)
+        assertEquals(ChallengeType.SHAKE, shake!!.type)
+        assertEquals(30, shake.target)
+        // Its OWN strategy, not a flavour of ACCEL_PEAKS — the two read opposite things out of the
+        // same hardware, and sharing would have let shake into IMPLEMENTED for free.
+        assertEquals(SensorStrategy.ACCEL_SHAKE, shake.sensorStrategy)
+        assertEquals(ProgressUnit.COUNT, shake.unit)
+
+        val flip = ChallengeRegistry.forId("flip_10")
+        assertNotNull("flip_10 must exist", flip)
+        assertEquals(ChallengeType.FLIP, flip!!.type)
+        assertEquals(10, flip.target)
+        assertEquals(SensorStrategy.ORIENTATION_FLIPS, flip.sensorStrategy)
+        // A COUNT despite sharing an axis with the face-down hold: it counts orientation changes,
+        // it does not time one.
+        assertEquals(ProgressUnit.COUNT, flip.unit)
+
+        val balance = ChallengeRegistry.forId("balance_20")
+        assertNotNull("balance_20 must exist", balance)
+        assertEquals(ChallengeType.BALANCE, balance!!.type)
+        // TWENTY, not the other holds' thirty — it is harder per second, because the other two reach
+        // a stable resting state and this one never does.
+        assertEquals(20, balance.target)
+        assertEquals(SensorStrategy.TILT_BALANCE, balance.sensorStrategy)
+        assertEquals(ProgressUnit.SECONDS, balance.unit)
+
         assertEquals(
             "every ChallengeType must now have an enabled spec",
             ChallengeType.entries.toSet(),
@@ -122,12 +150,28 @@ class ChallengeRegistryTest {
         // Structural rather than per-spec, so the next hold added cannot forget its unit. A hold whose
         // target were read as a COUNT would render "0 / 30" and never tick — the ring would look
         // broken for thirty seconds.
-        val holds = setOf(SensorStrategy.ORIENTATION_HOLD, SensorStrategy.PROXIMITY_HOLD)
+        val holds = setOf(
+            SensorStrategy.ORIENTATION_HOLD,
+            SensorStrategy.PROXIMITY_HOLD,
+            SensorStrategy.TILT_BALANCE,
+        )
         val found = ChallengeRegistry.enabled.filter { it.sensorStrategy in holds }
-        assertEquals("both holds should be enabled by now", 2, found.size)
+        assertEquals("all three holds should be enabled by now", 3, found.size)
         found.forEach {
             assertEquals("${it.id} is a hold and must use SECONDS", ProgressUnit.SECONDS, it.unit)
         }
+    }
+
+    @Test
+    fun `the chooser lists effort before patience`() {
+        // The chooser opens on this order, and a seven-row menu that led with the passive options
+        // would make "put the phone down for 20s" the default read. Not a correctness property —
+        // pinned because it is a deliberate product decision that is invisible in the data.
+        val ids = ChallengeRegistry.enabled.map { it.id }
+        assertEquals(
+            listOf("walk_20", "jump_10", "shake_30", "flip_10", "face_down_30", "forehead_30", "balance_20"),
+            ids,
+        )
     }
 
     @Test

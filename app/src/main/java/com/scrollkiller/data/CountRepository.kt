@@ -339,6 +339,21 @@ class CountRepository(
         }.distinctUntilChanged()
     }
 
+    /**
+     * Daily totals across ALL stored history — what milestones are derived from (D83).
+     *
+     * Reuses [observeDailyTotalsBetween] with an open lower bound rather than adding a query,
+     * because the ISO-8601 `yyyy-MM-dd` key sorts lexicographically in the same order it sorts
+     * chronologically (the reason D14 chose it), so `BETWEEN '0000-01-01' AND today` is every row
+     * up to today and nothing after. Today's merge therefore applies here too, for free.
+     *
+     * Bounded in practice: `daily_counts` holds at most a handful of rows per day, so even years of
+     * history is a few thousand small rows — and milestones ask an all-time question that a windowed
+     * query cannot answer.
+     */
+    fun observeAllDailyTotals(): Flow<Map<String, Int>> =
+        observeDailyTotalsBetween(EARLIEST_POSSIBLE_DATE, today())
+
     /** Session-derived seconds across the inclusive range (D80). 0 where nothing is rolled up yet. */
     fun observeSecondsBetween(from: String, to: String): Flow<Long> =
         minutesDao.observeTotalSecondsBetween(from, to).distinctUntilChanged()
@@ -426,6 +441,9 @@ class CountRepository(
         LocalDate.now(zone).atStartOfDay(zone).toInstant().toEpochMilli()
 
     private companion object {
+        /** Lower bound for an "all history" range read. Sorts before any real ISO date. */
+        const val EARLIEST_POSSIBLE_DATE = "0000-01-01"
+
         const val RAW_RETENTION_DAYS = 7L
         val RAW_RETENTION_MS = TimeUnit.DAYS.toMillis(RAW_RETENTION_DAYS)
         val PRUNE_INTERVAL_MS = TimeUnit.HOURS.toMillis(1)

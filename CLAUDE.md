@@ -15,7 +15,7 @@ Read docs/architecture.mermaid — full component graph. Summary: device is sour
 ## Non-negotiable invariants
 1. Sync is idempotent: every batch has client-generated UUID batch_id; server dedupes. Never POST absolute counts.
 2. Day boundary = user's timezone (stored on users), computed server-side. Client trusts server on app open.
-3. Leaderboard reads cached 30s. Never hit Redis per scroll.
+3. **Leaderboard reads cached 2s while a friends screen is OPEN, 30s otherwise. Never hit Redis per scroll, and never poll while the screen is closed.** (Amended D89 — was a flat 30s. A scroll battle at 30s resolution shows a friend's number a full minute stale, which is not a battle. The cheap half of the old rule is the half that mattered: the CLIENT never talks to Redis, and nothing polls when nobody is looking.)
 4. Raw sync events pruned >7d; daily aggregates kept forever.
 5. Play policy: AccessibilityService needs disclosure dialog before enabling. Never skip.
 6. The block screen is ALWAYS exitable. Exit and Back must leave the blocked app from every block state, and dismissal must never depend on the count, a timer, the network, or a challenge succeeding. The overlay tears down when the user leaves the tracked app. A block that cannot be dismissed is a P0 — no product reason outranks this.

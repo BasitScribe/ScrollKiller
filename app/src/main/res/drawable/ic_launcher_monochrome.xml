@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Themed-icon layer (Android 13+). The launcher recolours this to whatever the user's
+    wallpaper theme is, so it must be a SINGLE-COLOUR silhouette — every shape here is
+    white and the tint is applied over the top.
+
+    ## Why this file exists at all
+    Without a <monochrome> layer, a themed launcher does not fall back gracefully: it
+    either leaves this app as the one full-colour tile on an otherwise themed home
+    screen, or it flattens the adaptive foreground itself and produces a solid blob
+    where the chevron and the bar merge — because in ic_launcher_foreground.xml those
+    two shapes are distinguished ONLY by colour.
+
+    That is the whole design note. The mark separates the scroll from the block using
+    cobalt-soft against coral; a monochrome treatment throws that away, so this version
+    re-states the same idea using GEOMETRY instead: the bar keeps a gap under the
+    chevron and the chevron stays a stroke rather than a fill, so the two read as two
+    shapes even in one colour. It is the same mark, not a different one — a themed icon
+    that looks like another app's is worse than no themed icon.
+
+    Note the app does NOT use dynamicColor anywhere in its own UI (D58 deleted the
+    parameter outright, because deriving the palette from a wallpaper is exactly what a
+    brand should not do). This is not a contradiction: the launcher grid is the user's
+    surface and theming it is their call, whereas the app's interior is ours.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:pathData="M54,30 L54,56"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="9"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M38,44 L54,60 L70,44"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="9"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M33,71h42a6,6 0 0,1 0,12h-42a6,6 0 0,1 0,-12z" />
+
+</vector>

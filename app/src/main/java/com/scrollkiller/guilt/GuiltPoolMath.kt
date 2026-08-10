@@ -85,8 +85,12 @@ object GuiltPoolMath {
      * Simulated with the real [GuiltFiring], scroll by scroll, with the clock advanced past
      * [GuiltCadence.MIN_GAP_MS] every step — i.e. the display gap never binds. That is the RIGHT
      * assumption for sizing: the gap only trims consumption when someone scrolls faster than one
-     * swipe per ~5.5s sustained, so ignoring it gives the worst case a pool must survive, and a
-     * pool sized for the worst case is the point.
+     * swipe per [GuiltCadence.MIN_GAP_MS] sustained, so ignoring it gives the worst case a pool
+     * must survive, and a pool sized for the worst case is the point.
+     *
+     * Because the clock is advanced FROM the constant rather than by a literal, these numbers are
+     * independent of it: D83 raised the gap from 5.5s to 8s and every figure below is unchanged.
+     * The content bill is set by the SCHEDULE, in scrolls; the gap only ever governs display.
      */
     fun firesPerDay(scrollsPerDay: Int): Map<GuiltTier, Int> {
         val firing = GuiltFiring()

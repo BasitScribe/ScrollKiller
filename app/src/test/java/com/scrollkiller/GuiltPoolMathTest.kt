@@ -28,8 +28,17 @@ class GuiltPoolMathTest {
             .map(::File).first { it.exists() }.readText(),
     )!!
 
+    /**
+     * The pool a FREE user sees — which is the only one the coverage targets may be measured
+     * against (D85). Premium lines are additive on top and a free user provably never reaches
+     * them, so counting them here would let the pack claim a coverage most users do not have.
+     */
     private fun poolSize(tier: GuiltTier) =
         pack.pool(GuiltSurface.AMBIENT, tier, GuiltLocale.DEFAULT).size
+
+    /** Everything at [tier], premium included. Reported alongside, never used as the target. */
+    private fun poolSizeWithPremium(tier: GuiltTier) =
+        pack.pool(GuiltSurface.AMBIENT, tier, GuiltLocale.DEFAULT, includePremium = true).size
 
     @Test
     fun `consumption per tier is what the cadence implies`() {
@@ -131,29 +140,48 @@ class GuiltPoolMathTest {
         // (inadequate) reality rather than the target, so it passes today and fails the moment
         // the pack changes — at which point these numbers get updated and the ADR with them.
         //
-        // Read as: "tier T sustains 7-day no-repeat for a user doing up to N scrolls/day."
-        assertEquals(18, poolSize(GuiltTier.MILD))
-        assertEquals(18, poolSize(GuiltTier.MEDIUM))
-        assertEquals(18, poolSize(GuiltTier.STRONG))
-        assertEquals(18, poolSize(GuiltTier.EXTREME))
+        // Read as: "tier T sustains 7-day no-repeat for a FREE user doing up to N scrolls/day."
+        // Free-only, deliberately — see poolSize. D85 grew the pack 72 → 155; D86 grew it
+        // 155 → 217, entirely in tier 4, which is the only tier this file still tracks as short.
+        assertEquals(24, poolSize(GuiltTier.MILD))
+        assertEquals(24, poolSize(GuiltTier.MEDIUM))
+        assertEquals(40, poolSize(GuiltTier.STRONG))
+        assertEquals(103, poolSize(GuiltTier.EXTREME))
 
-        // Tiers 1-2: one fire/day, so 18 lines covers any user at all. Target already met.
-        assertTrue(GuiltPoolMath.sustainedScrollsPerDay(GuiltTier.MILD, 18) >= 2_000)
-        assertTrue(GuiltPoolMath.sustainedScrollsPerDay(GuiltTier.MEDIUM, 18) >= 2_000)
+        // Premium is additive on top and must never be counted toward a target.
+        assertEquals(26, poolSizeWithPremium(GuiltTier.MILD))
+        assertEquals(26, poolSizeWithPremium(GuiltTier.MEDIUM))
+        assertEquals(45, poolSizeWithPremium(GuiltTier.STRONG))
+        assertEquals(120, poolSizeWithPremium(GuiltTier.EXTREME))
 
-        // Tier 3: 5 fires/day needs 35. At 18 it runs out partway through the week for ANY user
-        // who reaches 100 — this is a real, permanent shortfall, and a small one to fix.
+        // Tiers 1-2: one fire/day, so anything past 7 covers any user at all. Long since met.
+        assertTrue(GuiltPoolMath.sustainedScrollsPerDay(GuiltTier.MILD, poolSize(GuiltTier.MILD)) >= 2_000)
+        assertTrue(GuiltPoolMath.sustainedScrollsPerDay(GuiltTier.MEDIUM, poolSize(GuiltTier.MEDIUM)) >= 2_000)
+
+        // Tier 3 is CLOSED as of D85, and this assertion is the inverse of the one it replaced.
+        // The band is finite (100..149 at every 10), so consumption caps at 5/day and 35 lines
+        // sustains a week for ANY user at ANY scroll rate. At 40 free lines it is done — not
+        // "covered for now", done, permanently, and no future scroll rate can reopen it.
         assertTrue(
-            "tier 3 should still be short at 18 lines — if this passes, update the ADR",
-            GuiltPoolMath.requiredPool(GuiltTier.STRONG, 800) > poolSize(GuiltTier.STRONG),
+            "tier 3 must now be CLOSED — free pool ${poolSize(GuiltTier.STRONG)} vs ceiling " +
+                "${GuiltPoolMath.requiredPool(GuiltTier.STRONG, 2_000)}",
+            GuiltPoolMath.requiredPool(GuiltTier.STRONG, 2_000) <= poolSize(GuiltTier.STRONG),
         )
 
-        // Tier 4: 18 lines sustains only a very light day. Anyone habitually past ~200 burns the
-        // week's supply and lands in the least-recently-shown fallback.
-        val tier4Covers = GuiltPoolMath.sustainedScrollsPerDay(GuiltTier.EXTREME, 18)
+        // Tier 4 is unbounded and remains the open one — but the gap is now a stretch rather than
+        // a chasm. 18 free lines covered a 160/day user, 48 covered 200, and 103 covers 270. The
+        // 150 target is set against the ~320/day heavy user (see EXPANSION_TARGETS), so this is
+        // the first time the shipped pack is within one authoring session of the commitment
+        // instead of within several. The fallback still carries everything above it, loudly.
+        //
+        // The RANGE, not the exact figure, on purpose: this number is derived by simulating the
+        // real GuiltFiring, so it moves if the schedule is ever retuned — and a retune should
+        // fail this test with a readable message about coverage, not with an off-by-ten equality
+        // that tells the next reader nothing about whether the coverage got better or worse.
+        val tier4Covers = GuiltPoolMath.sustainedScrollsPerDay(GuiltTier.EXTREME, poolSize(GuiltTier.EXTREME))
         assertTrue(
-            "tier 4 at 18 lines covers only up to $tier4Covers scrolls/day",
-            tier4Covers in 150..260,
+            "tier 4 at ${poolSize(GuiltTier.EXTREME)} free lines covers up to $tier4Covers scrolls/day",
+            tier4Covers in 250..320,
         )
     }
 
@@ -166,14 +194,21 @@ class GuiltPoolMathTest {
         //
         // Failing the build on "not written yet" was considered and rejected in D47: it would
         // block every unrelated change until a content task nobody is mid-way through completes.
+        // As of D85 tier 3 has LANDED its target and moved out of this list, which is exactly the
+        // transition this assertion was written to force. EXTREME is the only one left, and D86
+        // moved it from 48/150 to 103/150 without closing it — so the list is unchanged and the
+        // pinned sizes above are what actually record the progress. That is the intended
+        // behaviour of this pair of tests: this one is a LATCH on the set of open tiers, the one
+        // above is the odometer.
         val short = GuiltTier.entries.filter { poolSize(it) < GuiltPoolMath.targetPool(it) }
         val report = GuiltTier.entries.joinToString("\n") { tier ->
-            "  $tier: ${poolSize(tier)}/${GuiltPoolMath.targetPool(tier)} lines, " +
+            "  $tier: ${poolSize(tier)}/${GuiltPoolMath.targetPool(tier)} free lines " +
+                "(${poolSizeWithPremium(tier)} with premium), " +
                 "sustains ${GuiltPoolMath.sustainedScrollsPerDay(tier, poolSize(tier))} scrolls/day"
         }
         assertEquals(
-            "pack coverage changed — update the pinned sizes above and D48:\n$report",
-            listOf(GuiltTier.STRONG, GuiltTier.EXTREME),
+            "pack coverage changed — update the pinned sizes above and D48/D85:\n$report",
+            listOf(GuiltTier.EXTREME),
             short,
         )
     }

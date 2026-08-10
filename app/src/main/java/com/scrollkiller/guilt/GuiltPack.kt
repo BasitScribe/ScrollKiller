@@ -57,6 +57,47 @@ enum class GuiltSurface(val id: String) {
 }
 
 /**
+ * Whether a line is included with the app or reserved for a paying user (D85).
+ *
+ * ## The wire value is `access`, deliberately NOT `tier`
+ * "Tier" already means something load-bearing in this package — [GuiltTier] is the INTENSITY band
+ * (1..4) that decides how hard a line is allowed to hit. A second, unrelated "tier" on the line
+ * itself would collide with it in every conversation, every log line and every future reader's
+ * head, and the two are genuinely independent axes: there are premium lines at every intensity and
+ * free lines at every intensity. So the monetisation axis is `access`, and [GuiltTier] keeps the
+ * word it had first.
+ *
+ * ## Missing vs unrecognised are treated DIFFERENTLY, and that is the point
+ * A line with NO `access` is [FREE]: every pack written before this field existed is entirely free
+ * content, so that is not a guess, it is a fact about the corpus, and it means the 72 lines that
+ * shipped before D85 did not have to be touched.
+ *
+ * A line with an access value this client does not KNOW (`"trial"`, from some future pack) is
+ * [PREMIUM] instead. The asymmetry is deliberate: an unknown tier is one this client cannot verify
+ * entitlement for, and the safe failure is to withhold it rather than to give paid content away to
+ * everybody. Defaulting both cases the same way would have to pick one of those two mistakes for
+ * both, and they are not the same size.
+ */
+enum class GuiltAccess(val id: String) {
+
+    /** Shipped with the app. Everyone sees these. */
+    FREE("free"),
+
+    /** Reserved for a paying user. Withheld unless entitlement says otherwise. */
+    PREMIUM("premium");
+
+    companion object {
+
+        /** Wire value → access. See the enum doc for why the two null cases differ. */
+        fun fromId(id: String?): GuiltAccess =
+            when {
+                id.isNullOrBlank() -> FREE
+                else -> entries.firstOrNull { it.id == id } ?: PREMIUM
+            }
+    }
+}
+
+/**
  * One line of the pack.
  *
  * @param id stable, unique. This is the rotation's no-repeat key AND the daily deck's shuffle
@@ -72,6 +113,9 @@ enum class GuiltSurface(val id: String) {
  * @param lang/@param region the audience this line was written for (see [GuiltLocale]).
  *   Defaulted from the pack's own top-level `lang`/`region` at parse time, so a single-audience
  *   pack does not repeat them on all eighty lines.
+ * @param access free or paid (D85). Defaults to [GuiltAccess.FREE] so a pack written before the
+ *   field existed — and any hand-authored line that simply omits it — is free content, which is
+ *   both true and the fail-safe direction for a file people edit by hand.
  */
 data class GuiltLine(
     val id: String,
@@ -81,6 +125,7 @@ data class GuiltLine(
     val text: String,
     val lang: String = GuiltLocale.DEFAULT.lang,
     val region: String = GuiltLocale.DEFAULT.region,
+    val access: GuiltAccess = GuiltAccess.FREE,
 ) {
     /** The audience this line is for. */
     val locale: GuiltLocale get() = GuiltLocale(lang, region)
@@ -123,13 +168,19 @@ data class GuiltPack(
     /**
      * The lines [surface] may draw from for [tier], in [locale].
      *
-     * Three filters, applied in this order, each with a documented fallback. The order matters:
-     * AUDIENCE first (a line in the wrong language is unusable, not merely off-tone), then TONE,
-     * then INTENSITY.
+     * Four filters, applied in this order, each with a documented fallback. The order matters:
+     * AUDIENCE first (a line in the wrong language is unusable, not merely off-tone), then ACCESS,
+     * then TONE, then INTENSITY.
      *
      * 1. **Audience** — exact `lang-region`, else the same language at the default region, else
      *    [GuiltLocale.DEFAULT], else every line. A user whose region has no pack gets the India
      *    pack rather than silence.
+     * 1b. **Access** — premium lines are dropped unless [includePremium] (D85). This sits SECOND,
+     *    above tone and intensity, and it is the ONE filter with no fallback: every other step
+     *    widens when it would return nothing, and this one must not, because a fallback here would
+     *    hand paid content to a free user in exactly the situation where the free pool is thin —
+     *    i.e. constantly. A pack whose free set is too small is a CONTENT bug, caught by a test
+     *    over the bundled asset, not something to paper over at render time.
      * 2. **Tone** — the categories [surface] is mapped to in the pack. A surface absent from the
      *    pack (or mapped only to categories this client doesn't know) falls back to ALL
      *    categories; if that yields nothing, to the audience pool. An off-tone line beats a
@@ -142,11 +193,21 @@ data class GuiltPack(
      *    asset, because showing an EXTREME line to someone at 52 is precisely the failure the
      *    tiers exist to prevent.
      */
-    fun pool(surface: GuiltSurface, tier: GuiltTier, locale: GuiltLocale): List<GuiltLine> {
+    fun pool(
+        surface: GuiltSurface,
+        tier: GuiltTier,
+        locale: GuiltLocale,
+        includePremium: Boolean = false,
+    ): List<GuiltLine> {
         val audience = forLocale(locale)
+        // No `.ifEmpty` here, and that asymmetry with every line below it is the whole point —
+        // see the doc. Defaults to false so a call site that forgets the argument withholds paid
+        // content rather than leaking it.
+        val entitled =
+            if (includePremium) audience else audience.filter { it.access == GuiltAccess.FREE }
         val categories = surfaces[surface]?.takeIf { it.isNotEmpty() }
             ?: GuiltCategory.entries.toSet()
-        val toned = audience.filter { it.category in categories }.ifEmpty { audience }
+        val toned = entitled.filter { it.category in categories }.ifEmpty { entitled }
 
         toned.filter { tier.covers(it.intensity) }.let { if (it.isNotEmpty()) return it }
 

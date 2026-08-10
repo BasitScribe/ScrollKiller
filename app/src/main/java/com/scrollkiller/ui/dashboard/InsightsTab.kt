@@ -31,6 +31,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.scrollkiller.R
 import com.scrollkiller.brain.BrainState
+import com.scrollkiller.stats.Milestone
+import com.scrollkiller.stats.MilestoneId
 import com.scrollkiller.stats.TimeEstimate
 import com.scrollkiller.stats.TrendBucket
 import com.scrollkiller.ui.theme.Brand
@@ -93,6 +95,7 @@ fun InsightsTab(
         StatTiles(state)
         TimeCaption(state)
         PerAppCard(state)
+        MilestonesCard(state)
 
         Spacer(Modifier.height(16.dp))
     }
@@ -412,3 +415,111 @@ private const val BAR_RADIUS_DP = 3
 private const val BAR_TRACK_DP = 8
 private const val MIN_BAR_FRACTION = 0.012f
 private const val LIMIT_LINE_ALPHA = 0.65f
+
+/**
+ * Milestones (D83) — the warmth, deliberately placed at the BOTTOM of Insights.
+ *
+ * The block screen keeps the guilt (D33/D49); this is its counterweight. It sits here rather than
+ * on its own tab because it answers the same question the rest of this screen does — "how am I
+ * doing over time" — and a fourth nav item for seven rows would repeat the mistake the Apps tab
+ * was retired for.
+ *
+ * ## Locked rows show PROGRESS, never a reproach
+ * "4 of 7", not "you failed to reach 7". An app that only ever scolds gets uninstalled out of
+ * shame, which is what D9 anticipated and D78's research confirmed. An unearned milestone is a
+ * thing to walk toward, not a mark against the user.
+ */
+@Composable
+private fun MilestonesCard(state: InsightsUiState) {
+    if (state.milestones.isEmpty()) return
+    val earned = state.milestones.count { it.achieved }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(Brand.RADIUS_CARD_DP.dp),
+    ) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    stringResource(R.string.milestones_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    stringResource(R.string.milestones_count, earned, state.milestones.size),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            if (earned == 0) {
+                Text(
+                    stringResource(R.string.milestones_empty),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            state.milestones.forEach { milestone -> MilestoneRow(milestone) }
+        }
+    }
+}
+
+@Composable
+private fun MilestoneRow(milestone: Milestone) {
+    // Earned rows carry the healthy mint; locked ones stay in the quiet tier so the card reads as
+    // a set of things to reach rather than a wall of failures.
+    val dot = if (milestone.achieved) Color(BrainState.HEALTHY.accentArgb) else Color(Brand.ON_LIGHT_FAINT)
+
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier
+                    .width(MILESTONE_DOT_DP.dp)
+                    .height(MILESTONE_DOT_DP.dp)
+                    .clip(RoundedCornerShape(MILESTONE_DOT_DP.dp))
+                    .background(dot),
+            )
+            Spacer(Modifier.width(10.dp))
+            Text(
+                text = stringResource(milestoneLabel(milestone.id)),
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (milestone.achieved) {
+                    MaterialTheme.colorScheme.onSurface
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
+        }
+        Text(
+            text = if (milestone.achieved) {
+                EARNED_MARK
+            } else {
+                stringResource(R.string.milestones_progress, milestone.progress, milestone.target)
+            },
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+private fun milestoneLabel(id: MilestoneId): Int = when (id) {
+    MilestoneId.FIRST_DAY_UNDER -> R.string.milestone_first_day_under
+    MilestoneId.STREAK_3 -> R.string.milestone_streak_3
+    MilestoneId.STREAK_7 -> R.string.milestone_streak_7
+    MilestoneId.STREAK_14 -> R.string.milestone_streak_14
+    MilestoneId.STREAK_30 -> R.string.milestone_streak_30
+    MilestoneId.TOTAL_10 -> R.string.milestone_total_10
+    MilestoneId.TOTAL_50 -> R.string.milestone_total_50
+}
+
+private const val MILESTONE_DOT_DP = 8
+private const val EARNED_MARK = "✓"
