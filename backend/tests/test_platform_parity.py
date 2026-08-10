@@ -36,9 +36,7 @@ from app.platforms import Platform, parse_platform
 from tests.conftest import REPO_ROOT
 
 #: The Kotlin file declaring the client's platform identifiers.
-PLATFORM_SPEC_KT = (
-    REPO_ROOT / "app/src/main/java/com/scrollkiller/service/PlatformSpec.kt"
-)
+PLATFORM_SPEC_KT = REPO_ROOT / "app/src/main/java/com/scrollkiller/service/PlatformSpec.kt"
 
 #: `INSTAGRAM("instagram"),` — a member of the Kotlin enum, capturing its wire id.
 #:

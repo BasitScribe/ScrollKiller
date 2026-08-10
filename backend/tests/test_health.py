@@ -11,7 +11,10 @@ from __future__ import annotations
 
 import time
 
+import pytest
 from fastapi.testclient import TestClient
+
+from app.routers import readiness
 
 
 def test_health_is_ok(client: TestClient) -> None:
@@ -46,11 +49,30 @@ def test_readyz_is_503_when_no_database_is_configured(no_db_env: None, client: T
     assert body["detail"] == "database not configured"
 
 
-def test_readyz_is_still_503_when_a_database_is_configured(
-    unreachable_db_client: TestClient,
+def test_readyz_is_ready_when_the_database_answers(sqlite_db_env: None, client: TestClient) -> None:
+    """Since 3b this is a real `SELECT 1`, not a check that a URL string exists — SQLAlchemy
+    connects lazily, so a healthy-looking engine can be pointed at a host that does not exist."""
+    response = client.get("/readyz")
+
+    assert response.status_code == 200
+    assert response.json() == {"ready": True, "detail": "ok"}
+
+
+def test_readyz_is_503_when_the_database_cannot_be_reached(
+    monkeypatch: pytest.MonkeyPatch, unreachable_db_client: TestClient
 ) -> None:
-    """3b replaces this branch with a real `SELECT 1`. Until then readiness must
-    not claim success merely because a URL string exists."""
+    """Unreachable is a different answer from unconfigured, and the two have different fixes.
+
+    The timeout is shortened here so the suite does not spend the real budget waiting on an
+    unroutable address — what is being asserted is that the probe RETURNS. A readiness check that
+    hangs is indistinguishable from one that fails, except that it also occupies a worker.
+    """
+    monkeypatch.setattr(readiness, "READINESS_TIMEOUT_S", 0.25)
+
+    started = time.monotonic()
     response = unreachable_db_client.get("/readyz")
+    elapsed = time.monotonic() - started
+
     assert response.status_code == 503
-    assert response.json()["ready"] is False
+    assert response.json() == {"ready": False, "detail": "database unreachable"}
+    assert elapsed < 5.0, f"the probe took {elapsed:.2f}s — it is not honouring its timeout"

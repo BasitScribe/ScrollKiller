@@ -7,12 +7,19 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from app import db
 from app.config import get_settings
 from app.main import create_app
 
 #: backend/ — the directory holding pyproject.toml, not the repo root.
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = BACKEND_ROOT.parent
+
+#: A real, working async database that needs no server, so `ping()` and the session factory are
+#: covered by running them rather than by mocking them. `aiosqlite` is a DEV dependency and nothing
+#: in `app/` knows it exists — `connect_args_for` branches on the URL's driver, which is production
+#: behaviour that happens to make this possible, not a hook put there for tests.
+SQLITE_URL = "sqlite+aiosqlite:///:memory:"
 
 
 @pytest.fixture(autouse=True)
@@ -22,6 +29,20 @@ def _clean_settings_cache() -> Iterator[None]:
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def _reset_engine() -> Iterator[None]:
+    """The engine is a module global, memoised for the life of the process.
+
+    Without this, the first test to touch a database URL would pin that engine for every test after
+    it — including the ones whose whole point is that no database is configured.
+    """
+    db._engine = None
+    db._sessionmaker = None
+    yield
+    db._engine = None
+    db._sessionmaker = None
 
 
 @pytest.fixture
@@ -44,6 +65,14 @@ def unreachable_db_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClien
     get_settings.cache_clear()
     with TestClient(create_app()) as test_client:
         yield test_client
+
+
+@pytest.fixture
+def sqlite_db_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """A DATABASE_URL pointing at a database that actually answers."""
+    monkeypatch.setenv("DATABASE_URL", SQLITE_URL)
+    get_settings.cache_clear()
+    yield
 
 
 @pytest.fixture

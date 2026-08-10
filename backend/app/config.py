@@ -36,10 +36,18 @@ class Settings(BaseSettings):
     environment: Environment = "local"
     log_level: str = "INFO"
 
-    # Not used until 3b. Declared now so the readiness check has something honest
-    # to report — `None` means "no database configured", which is the true state
-    # of this service today and is why /readyz returns 503 rather than pretending.
+    # The POOLED endpoint — what the application runs on. `None` means no database
+    # is configured, which is a supported state: /readyz reports it honestly rather
+    # than the service failing to start. See app/db.py for why there are two URLs.
     database_url: str | None = Field(default=None)
+
+    # The DIRECT endpoint — Alembic, and nothing else.
+    #
+    # Declared here so the name is documented in one place with the other one, but
+    # deliberately NOT read by app/db.py: the application must be unable to reach
+    # the direct endpoint by accident, and a field nothing imports is the cheapest
+    # form of that. `migrations/env.py` reads the environment variable itself.
+    database_url_direct: str | None = Field(default=None)
 
 
 @lru_cache(maxsize=1)

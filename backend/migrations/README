@@ -1,0 +1,32 @@
+Alembic migrations for the ScrollKiller scoreboard API.
+
+Async single-database configuration (asyncpg).
+
+⚑ These run on the DIRECT Neon endpoint, never the pooled one. `env.py` reads
+DATABASE_URL_DIRECT and refuses to run without it — it does NOT fall back to
+DATABASE_URL. The reasoning is in that file's docstring and in D62; the short
+version is that Alembic's version lock is connection-scoped and a transaction
+pooler does not preserve it.
+
+    # review the SQL without touching anything
+    DATABASE_URL_DIRECT=postgresql+asyncpg://... alembic upgrade head --sql
+
+    # actually apply it
+    DATABASE_URL_DIRECT=postgresql+asyncpg://... alembic upgrade head
+
+    # new revision (autogenerate needs a reachable database)
+    DATABASE_URL_DIRECT=postgresql+asyncpg://... alembic revision --autogenerate -m "what changed"
+
+Two things autogenerate will not do for you:
+
+1. Wrap constraint names in `op.f()`. Alembic re-applies the naming convention
+   from `Base.metadata` to names in a revision, so a plain
+   `name="ck_daily_counts_count_non_negative"` comes back out as
+   `ck_daily_counts_ck_daily_counts_count_non_negative`.
+2. Extend the `platform` ENUM. Adding a member to `app.platforms.Platform` needs
+   a revision running `ALTER TYPE platform ADD VALUE ...`, and on older Postgres
+   that cannot run inside a transaction.
+
+Do not import `app.models` into a revision. A migration is a historical fact and
+must not change meaning when the models do; `tests/test_migrations.py` is what
+keeps the two from drifting apart.

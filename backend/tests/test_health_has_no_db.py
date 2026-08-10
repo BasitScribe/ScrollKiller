@@ -113,15 +113,21 @@ def test_health_import_closure_never_reaches_the_database() -> None:
 def test_the_guard_can_actually_fail() -> None:
     """A guard nobody has ever seen fail is a guard nobody knows works.
 
-    Readiness IS allowed to reach the database, so once 3b lands, its closure
-    will contain a forbidden prefix and this test proves the detector fires. It
-    is written to hold in 3a too, where the only thing it can prove is that the
-    matcher itself is not vacuous.
+    3a could only prove the matcher was not vacuous, against a list of made-up module names. Since
+    3b there is a real positive control: `/readyz` genuinely reaches the database, through the same
+    walk, from a router next to the one being guarded. If this comes back empty, the detector has
+    stopped detecting and the green test above means nothing.
     """
-    candidates = {"sqlalchemy.ext.asyncio", "app.models.user", "fastapi", "app.config"}
-    matches = sorted(
+    closure = _import_closure("app.routers.readiness")
+    offenders = sorted(
         name
-        for name in candidates
+        for name in closure
         if any(name == p or name.startswith(f"{p}.") for p in FORBIDDEN_PREFIXES)
     )
-    assert matches == ["app.models.user", "sqlalchemy.ext.asyncio"]
+
+    assert offenders, (
+        "readiness no longer reaches the database through its imports. Either /readyz stopped "
+        "doing a real query, or this walk stopped working — and if it is the second one, the "
+        "test above is passing vacuously."
+    )
+    assert any(name.startswith("sqlalchemy") for name in offenders)

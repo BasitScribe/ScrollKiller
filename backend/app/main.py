@@ -8,12 +8,32 @@ arrive in 3c (auth) and 3d (sync).
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 from app.config import get_settings
+from app.db import dispose_engine
 from app.logging_config import configure_logging
 from app.routers import health, readiness
 from app.timezones import assert_tzdata_available
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    """Startup and shutdown.
+
+    Nothing happens on the way up — deliberately. Connecting at startup would make the service
+    refuse to boot while Neon is waking from autosuspend, turning a few seconds of cold start into a
+    crash loop; `/readyz` is the right place to be unable to reach the database, because being
+    not-ready is a state it can report and recover from. The engine connects on first use.
+
+    On the way down the engine is disposed, so a redeploy hands its connections back rather than
+    leaving them for the free tier's timeout to reap.
+    """
+    yield
+    await dispose_engine()
 
 
 def create_app() -> FastAPI:
@@ -37,6 +57,7 @@ def create_app() -> FastAPI:
         version="0.1.0",
         # No content data ever reaches this service — only counts (CLAUDE.md).
         description="ScrollKiller scoreboard API. Counts only; never content.",
+        lifespan=lifespan,
     )
     app.include_router(health.router)
     app.include_router(readiness.router)
