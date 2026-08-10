@@ -1,5 +1,6 @@
 package com.scrollkiller
 
+import com.scrollkiller.guilt.GuiltAccess
 import com.scrollkiller.guilt.GuiltCategory
 import com.scrollkiller.guilt.GuiltLocale
 import com.scrollkiller.guilt.GuiltPack
@@ -384,6 +385,112 @@ class GuiltPackTest {
                     GuiltPack.FALLBACK.pool(surface, tier, GuiltLocale.DEFAULT).isNotEmpty(),
                 )
             }
+        }
+    }
+
+    /* ------------------------------------------------------------------------------------- */
+    /* Premium gating (D85)                                                                   */
+    /* ------------------------------------------------------------------------------------- */
+
+    @Test
+    fun `a free user never sees a premium line, on any surface at any tier`() {
+        // THE gate. Everything else about premium is content strategy; this is the property that
+        // has to hold, and it has to hold everywhere rather than at the one call site that
+        // remembered to pass the flag.
+        val pack = pack()
+        GuiltSurface.entries.forEach { surface ->
+            GuiltTier.entries.forEach { tier ->
+                pack.pool(surface, tier, GuiltLocale.DEFAULT).forEach { line ->
+                    assertEquals(
+                        "${line.id} is premium and reached a free $surface/$tier pool",
+                        GuiltAccess.FREE,
+                        line.access,
+                    )
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `withholding premium is the DEFAULT, not something a caller opts into`() {
+        // A call site that forgets the argument must under-serve, never leak. This is why
+        // includePremium defaults to false rather than being a required parameter — a required
+        // one would be passed `true` by whoever was in a hurry.
+        val pack = pack()
+        assertEquals(
+            pack.pool(GuiltSurface.AMBIENT, GuiltTier.EXTREME, GuiltLocale.DEFAULT).map { it.id },
+            pack.pool(GuiltSurface.AMBIENT, GuiltTier.EXTREME, GuiltLocale.DEFAULT, includePremium = false)
+                .map { it.id },
+        )
+    }
+
+    @Test
+    fun `a premium user sees strictly more, and it is a superset`() {
+        // Premium ADDS; it must never swap the free lines out for different ones, or paying would
+        // change the app's voice rather than widening it.
+        val pack = pack()
+        GuiltTier.entries.forEach { tier ->
+            val free = pack.pool(GuiltSurface.AMBIENT, tier, GuiltLocale.DEFAULT).map { it.id }.toSet()
+            val paid = pack.pool(GuiltSurface.AMBIENT, tier, GuiltLocale.DEFAULT, includePremium = true)
+                .map { it.id }.toSet()
+            assertTrue("$tier: premium must be a superset of free", paid.containsAll(free))
+            assertTrue("$tier: premium adds nothing — the tier has no paid lines", paid.size > free.size)
+        }
+    }
+
+    @Test
+    fun `the free pool stands alone at every tier`() {
+        // There is deliberately NO fallback that would let a thin free pool borrow a premium line
+        // (see GuiltPack.pool), so "enough free content" is a property of the CONTENT and this is
+        // what enforces it. A pack that gated too much would fail here rather than silently
+        // starving free users into the least-recently-shown fallback.
+        val pack = pack()
+        GuiltTier.entries.forEach { tier ->
+            val free = pack.pool(GuiltSurface.AMBIENT, tier, GuiltLocale.DEFAULT)
+            assertTrue("$tier free pool is only ${free.size} lines", free.size >= 15)
+            assertTrue(
+                "$tier has no FREE pride line — the way out must not be behind a paywall (D9)",
+                free.any { it.category == GuiltCategory.PRIDE },
+            )
+        }
+    }
+
+    @Test
+    fun `absent access is free and unrecognised access is premium`() {
+        // The deliberate asymmetry. Absent = free, because every pack written before the field
+        // existed is free content — a fact, not a guess. Unrecognised = premium, because a tier
+        // this client cannot verify entitlement for should be withheld, not given away.
+        val json = """
+            {"schema_version":2,"pack_id":"p","revision":1,"lang":"en","region":"IN","lines":[
+              {"id":"absent","category":"roast","intensity":1,"text":"no access field"},
+              {"id":"blank","category":"roast","intensity":1,"access":"","text":"blank access"},
+              {"id":"free","category":"roast","intensity":1,"access":"free","text":"explicitly free"},
+              {"id":"paid","category":"roast","intensity":1,"access":"premium","text":"explicitly paid"},
+              {"id":"future","category":"roast","intensity":1,"access":"trial","text":"a tier we do not sell"}
+            ]}
+        """.trimIndent()
+        val byId = GuiltPackParser.parse(json)!!.lines.associateBy { it.id }
+        assertEquals(GuiltAccess.FREE, byId.getValue("absent").access)
+        assertEquals(GuiltAccess.FREE, byId.getValue("blank").access)
+        assertEquals(GuiltAccess.FREE, byId.getValue("free").access)
+        assertEquals(GuiltAccess.PREMIUM, byId.getValue("paid").access)
+        assertEquals(
+            "an access tier this client does not know must be WITHHELD, not given away",
+            GuiltAccess.PREMIUM,
+            byId.getValue("future").access,
+        )
+    }
+
+    @Test
+    fun `premium content exists at every intensity`() {
+        // Otherwise "premium" would mean "more lines when you are already deep in", which is the
+        // one place the free pool is thinnest and the offer would read as extortion rather than
+        // as extra. Every tier carries some.
+        val pack = pack()
+        GuiltTier.entries.forEach { tier ->
+            val paid = pack.pool(GuiltSurface.AMBIENT, tier, GuiltLocale.DEFAULT, includePremium = true)
+                .filter { it.access == GuiltAccess.PREMIUM }
+            assertTrue("$tier has no premium lines at all", paid.isNotEmpty())
         }
     }
 }

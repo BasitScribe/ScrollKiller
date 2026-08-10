@@ -58,6 +58,17 @@ class ReelScrollAccessibilityService : AccessibilityService() {
                 BlockFailureInjector.arm(intent.getStringExtra(EXTRA_MODE))
                 return
             }
+            // Same rationale as the injector above: a third DEBUG-only adb aid with the same
+            // lifetime shares the one receiver rather than adding another thing to register,
+            // unregister and reason about.
+            if (intent?.action == ACTION_BUBBLE_PROBE) {
+                BubbleProbe.handle(
+                    state = intent.getStringExtra(EXTRA_STATE),
+                    reveal = intent.getStringExtra(EXTRA_REVEAL),
+                    report = intent.getStringExtra(EXTRA_REPORT),
+                )
+                return
+            }
             val root = rootInActiveWindow
             val spec = PlatformRegistry.forPackage(root?.packageName)
             val label = intent?.getStringExtra(EXTRA_LABEL)
@@ -165,6 +176,11 @@ class ReelScrollAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         overlay.ensureAttached()
         registerLabelReceiver()
+        // DEBUG-only, and a no-op in release: gives the bubble probe a handle on the live
+        // controller so an adb command can reach the attached window. Detached in onDestroy /
+        // onUnbind beside overlay.destroy(), because a stale reference here would keep a
+        // torn-down controller (and its window) alive for the life of the process.
+        BubbleProbe.attach(overlay)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -529,6 +545,7 @@ class ReelScrollAccessibilityService : AccessibilityService() {
     override fun onUnbind(intent: android.content.Intent?): Boolean {
         surfaceHandler.removeCallbacks(hideSurfaceRunnable)
         overlay.destroy()
+        BubbleProbe.attach(null)     // never hold a torn-down controller (and its window) alive
         unregisterLabelReceiver()
         return super.onUnbind(intent)
     }
@@ -536,6 +553,7 @@ class ReelScrollAccessibilityService : AccessibilityService() {
     override fun onDestroy() {
         surfaceHandler.removeCallbacks(hideSurfaceRunnable)
         overlay.destroy()
+        BubbleProbe.attach(null)
         unregisterLabelReceiver()
         super.onDestroy()
     }
@@ -550,7 +568,10 @@ class ReelScrollAccessibilityService : AccessibilityService() {
         ContextCompat.registerReceiver(
             this,
             labelReceiver,
-            IntentFilter(ACTION_DIAG_LABEL).apply { addAction(ACTION_BLOCK_FAIL) },
+            IntentFilter(ACTION_DIAG_LABEL).apply {
+                addAction(ACTION_BLOCK_FAIL)
+                addAction(ACTION_BUBBLE_PROBE)
+            },
             ContextCompat.RECEIVER_EXPORTED,
         )
         labelReceiverRegistered = true
@@ -578,6 +599,22 @@ class ReelScrollAccessibilityService : AccessibilityService() {
          * waited for. See [BlockFailureInjector] for the modes and the adb one-liners.
          */
         const val ACTION_BLOCK_FAIL = "com.scrollkiller.BLOCK_FAIL"
+
+        /**
+         * Broadcast action for the DEBUG bubble probe (D86) — force the mascot state, fire a
+         * reveal, or dump what the bubble believes about itself. See [BubbleProbe] for the
+         * one-liners and, more importantly, for why the alternative is scrolling to 150 by hand.
+         */
+        const val ACTION_BUBBLE_PROBE = "com.scrollkiller.BUBBLE"
+
+        /** String extra on [ACTION_BUBBLE_PROBE]: `healthy`, `cracking`, `fried`, or `off`. */
+        const val EXTRA_STATE = "state"
+
+        /** String extra on [ACTION_BUBBLE_PROBE]: `fade`, `rise`, `pop`, `sweep`, or `auto`. */
+        const val EXTRA_REVEAL = "reveal"
+
+        /** Any value on [ACTION_BUBBLE_PROBE] triggers the state dump. */
+        const val EXTRA_REPORT = "report"
 
         /** String extra on [ACTION_BLOCK_FAIL]: `no_attach`, `throw`, or `off`. */
         const val EXTRA_MODE = "mode"

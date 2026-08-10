@@ -128,4 +128,35 @@ class GuiltTextTest {
         // So a parser log or a test failure is actionable: "contains 'hundred'" beats "invalid".
         assertEquals("hundred", GuiltText.offendingNumber("A hundred windows into other lives."))
     }
+
+    @Test
+    fun `Indian scale words are caught too (D85)`() {
+        // A REAL HOLE, found when the pack leaned harder into Hinglish. The guard was written
+        // against a pack that happened to use only English scale words, so "a lakh of these" would
+        // have sailed past every check and shipped precisely the D47 bug the guard exists to stop.
+        // The lesson: a content guard has to widen when the CONTENT's register changes, not only
+        // when the code does.
+        assertEquals("lakh", GuiltText.offendingNumber("You have watched a lakh of these."))
+        assertEquals("crore", GuiltText.offendingNumber("A crore people saw this before you."))
+        // Reported with the casing the author used, like every other offender — the message names
+        // the fragment to go and fix, so it has to match what is actually in the file.
+        assertEquals("Lakhs", GuiltText.offendingNumber("Lakhs of reels, same face."))
+        assertEquals("Crores", GuiltText.offendingNumber("Crores of them, all the same."))
+    }
+
+    @Test
+    fun `the desi lines that shipped are clean`() {
+        // Spot-check of the register D85 added, so the guard's new words cannot be over-broad and
+        // start rejecting ordinary Hinglish. These are real shipped lines.
+        listOf(
+            "Arre keep going. It is only {count}, that is basically nothing.",
+            "Bhai. {count}. Bas. Enough.",
+            "Theek hai, keep going. It is not like the day is going anywhere. Oh.",
+            "Bas thoda aur. That is what you said at {count} too.",
+            "{count} reels of sasta dopamine, paid for in evenings.",
+            "{minutes} minutes, and not one of them is coming back.",
+        ).forEach { line ->
+            assertNull("a shipped line was rejected: $line", GuiltText.offendingNumber(line))
+        }
+    }
 }

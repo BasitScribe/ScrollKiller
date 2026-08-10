@@ -89,6 +89,26 @@
     <string name="insights_empty_title">Nothing to chart yet</string>
     <string name="insights_empty_body">Once you scroll a tracked app, your daily totals and streaks show up here.</string>
 
+    <!--
+        Milestones (D83). The counterweight to the guilt engine: the block screen keeps the scolding,
+        this is where warmth lives. A LOCKED milestone shows progress toward it and never a reproach
+        — "4 of 7", not "you failed" — because an app that only ever scolds gets uninstalled out of
+        shame, which is the finding D78's research turned up and D9 anticipated.
+
+        Names are achievements, not instructions. "A quiet week" rather than "Stay under for 7 days".
+    -->
+    <string name="milestones_title">Your wins</string>
+    <string name="milestones_count">%1$d of %2$d</string>
+    <string name="milestones_progress">%1$d of %2$d</string>
+    <string name="milestone_first_day_under">First day under</string>
+    <string name="milestone_streak_3">Three in a row</string>
+    <string name="milestone_streak_7">A quiet week</string>
+    <string name="milestone_streak_14">Two quiet weeks</string>
+    <string name="milestone_streak_30">A quiet month</string>
+    <string name="milestone_total_10">Ten good days</string>
+    <string name="milestone_total_50">Fifty good days</string>
+    <string name="milestones_empty">Your first day under the limit unlocks the first one.</string>
+
     <!-- Apps tab. -->
     <string name="apps_title">Apps</string>
 
@@ -216,10 +236,13 @@
          cannot drift from the number the engine counts to. -->
     <string name="challenge_walk_prompt">Walk %1$d steps</string>
     <string name="challenge_jump_prompt">Jump %1$d times</string>
+    <string name="challenge_shake_prompt">Shake the phone %1$d times — hard enough to mean it</string>
+    <string name="challenge_flip_prompt">Turn the phone over %1$d times — all the way, each time</string>
     <!-- The hold prompts state the RESET rule up front. It has to be a promise, not a surprise: a
          user who learns about it by losing 25 seconds reads the challenge as broken. -->
     <string name="challenge_face_down_prompt">Phone face down for %1$d seconds — lift it and the timer restarts</string>
     <string name="challenge_forehead_prompt">Hold the phone to your forehead for %1$d seconds — take it away and the timer restarts</string>
+    <string name="challenge_balance_prompt">Balance the phone flat on your palm for %1$d seconds — tip it and the timer restarts</string>
     <string name="challenge_reward">Finish and you get %1$d minutes</string>
     <string name="challenge_cancel">Back</string>
     <!-- NOTE: guilt lines are NOT string resources. They live in assets/guilt_pack.json so the

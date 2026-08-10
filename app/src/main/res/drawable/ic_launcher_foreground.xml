@@ -1,20 +1,70 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Foreground layer of the adaptive launcher icon: a simple vector drawn on a
-    108x108dp canvas (the adaptive-icon standard). Only the centre ~72dp is
-    guaranteed visible; the rest is safe-zone padding the launcher may mask/crop.
-    Placeholder art (a downward "no-scroll" chevron) — replace with real branding later.
+    Foreground layer of the adaptive launcher icon, on the standard 108x108dp canvas.
+    Only the centre 72dp is guaranteed visible; everything outside it is safe-zone
+    padding the launcher may mask or crop, so every drawn shape below sits inside
+    x/y 18..90.
+
+    ## This replaces a PLACEHOLDER, and the placeholder was also a brand-colour leak
+    What was here was a purple #7C4DFF chevron, marked "replace with real branding
+    later". Purple appears nowhere else in this app — the palette is cobalt-led with
+    coral accents, sampled from the mascot (D58) — so the one piece of art every user
+    sees before they ever open the app was the one piece drawn in a colour the brand
+    does not contain.
+
+    ## The mark: a scroll, stopped
+    A down-chevron (the scroll — the gesture the whole app is about) meeting a solid
+    horizontal bar (the block). It says what the app does in one shape, reads at 48dp,
+    and is nothing like BrainPal's mark.
+
+    Deliberately NOT the mascot. The mascot is full-colour raster art trimmed to the
+    character (tools/mascot_import.py), and a launcher icon has to survive a circular
+    mask, a squircle mask and a monochrome themed treatment — which detailed art with
+    its own internal colours cannot do. The mascot leads the app; the mark leads the
+    launcher. See ic_launcher_monochrome.xml, which is this same geometry and only
+    works BECAUSE the geometry is this simple.
+
+    ## Colours are literals here, and that is the ONE allowed exception
+    Brand.kt is the single place a brand colour is written (D58), and Kotlin cannot be
+    read from a vector drawable. Same exception themes.xml already takes for the window
+    background, and handled the same way: cross-commented on both sides so a palette
+    change cannot silently leave the icon behind.
+      #D6E4F7 = Brand.COBALT_SOFT   (the scroll — recessive, it is what you were doing)
+      #F08090 = Brand.CORAL         (the block — the accent, it is what we did about it)
+    The background is a separate layer: values/ic_launcher_background.xml = Brand.INK.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+
+    <!--
+        The scroll. Two strokes rather than a glyph so it stays crisp under the
+        launcher's own scaling, with round caps/joins so it reads as a gesture rather
+        than as an arrowhead. It stops well above the bar: that gap is what makes the
+        two shapes read as "coming down onto" instead of as one connected symbol.
+    -->
     <path
-        android:fillColor="#7C4DFF"
-        android:pathData="M54,30 L54,66 M40,54 L54,68 L68,54"
-        android:strokeColor="#7C4DFF"
-        android:strokeWidth="6"
+        android:pathData="M54,30 L54,56"
+        android:strokeColor="#D6E4F7"
+        android:strokeWidth="9"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M38,44 L54,60 L70,44"
+        android:strokeColor="#D6E4F7"
+        android:strokeWidth="9"
         android:strokeLineCap="round"
         android:strokeLineJoin="round" />
+
+    <!--
+        The block. Solid, full-width, coral — the only FILLED shape in the mark, so at
+        launcher size the eye lands on the stop and not on the scroll. Rounded ends
+        match the pill language the bubble and the buttons already use
+        (Brand.RADIUS_PILL_DP).
+    -->
+    <path
+        android:fillColor="#F08090"
+        android:pathData="M33,71h42a6,6 0 0,1 0,12h-42a6,6 0 0,1 0,-12z" />
+
 </vector>

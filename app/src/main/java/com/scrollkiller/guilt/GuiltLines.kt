@@ -223,6 +223,9 @@ object GuiltLines {
             dayKey = LocalDate.now().toString(),
             monotonicMs = SystemClock.elapsedRealtime(),
             wallMs = System.currentTimeMillis(),
+            // Asked per draw rather than held, so an entitlement that lapses stops mattering on
+            // the very next line rather than at the next process start (D85).
+            isPremium = Entitlements.isPremium(context),
         )
     }
 

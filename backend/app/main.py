@@ -13,6 +13,7 @@ from fastapi import FastAPI
 from app.config import get_settings
 from app.logging_config import configure_logging
 from app.routers import health, readiness
+from app.timezones import assert_tzdata_available
 
 
 def create_app() -> FastAPI:
@@ -20,6 +21,16 @@ def create_app() -> FastAPI:
     can construct an app against a different environment without reimporting."""
     settings = get_settings()
     configure_logging(settings.log_level)
+
+    # Fail here, at construction, rather than per request. This service's whole
+    # job is filing counts against a date in the USER's timezone (invariant 2),
+    # and `zoneinfo` reads the SYSTEM tz database — which slim base images
+    # frequently do not ship. Without it every user's timezone is unresolvable
+    # and every count is misdated, but nothing crashes: the service starts, the
+    # health probe passes, and it serves wrong dates. That is a worse failure
+    # than not booting, so it is turned into not booting. See app/timezones.py
+    # for the fix the exception message carries.
+    assert_tzdata_available()
 
     app = FastAPI(
         title=settings.app_name,

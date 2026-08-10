@@ -53,9 +53,17 @@ object ChallengeAvailability {
             // its source requires proximity AND accelerometer, and proximity — while near-universal —
             // is absent on some tablets and budget handsets. Such a device simply never sees the
             // forehead row, which is the graceful-absence rule rather than a special case.
+            //
+            // The three added at D84 are all plain accelerometer reads, so they inherit exactly this
+            // answer — which is a large part of why they were the ones chosen. A user who declined
+            // the motion permission, or whose device has no pedometer, now loses one row out of
+            // seven rather than one out of four.
             SensorStrategy.ACCEL_PEAKS,
             SensorStrategy.ORIENTATION_HOLD,
             SensorStrategy.PROXIMITY_HOLD,
+            SensorStrategy.ACCEL_SHAKE,
+            SensorStrategy.ORIENTATION_FLIPS,
+            SensorStrategy.TILT_BALANCE,
             -> true
         }
     }

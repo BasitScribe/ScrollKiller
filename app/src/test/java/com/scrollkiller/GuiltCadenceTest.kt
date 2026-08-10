@@ -80,4 +80,19 @@ class GuiltCadenceTest {
             GuiltCadence.MIN_GAP_MS,
         )
     }
+
+    @Test
+    fun `a line stays up long enough to actually be read`() {
+        // Five days of real use found the original 4s collapsed the pill mid-sentence, which is
+        // the feature failing rather than a taste complaint: an unread line was never shown, and
+        // the pack, the tiers and the no-repeat rotation all exist to serve a line someone reads.
+        //
+        // The floor is deliberately below the shipped 6.5s — this pins the LESSON, not the tuning.
+        // A future edit chasing frequency may lower the display, but not back under the point
+        // where the pack's longer lines stop being finishable (D83).
+        assertTrue(
+            "DISPLAY_MS=${GuiltCadence.DISPLAY_MS} is too short to finish a long line",
+            GuiltCadence.DISPLAY_MS >= 6_000L,
+        )
+    }
 }

@@ -33,6 +33,7 @@ object GuiltPackParser {
      *    would let one line occupy two slots in a cycle, and would collide in the daily deck);
      *  - a missing or out-of-range `intensity` (defaulted/clamped, see [parseLines]);
      *  - a missing `lang`/`region` (inherited from the pack's own defaults);
+     *  - a missing `access` (FREE) or an unrecognised one (PREMIUM — see [GuiltAccess]);
      *  - an unknown surface key, or a surface listing categories this client doesn't know.
      */
     fun parse(json: String): GuiltPack? {
@@ -103,6 +104,10 @@ object GuiltPackParser {
                 text = text,
                 lang = obj.optString("lang").takeIf { it.isNotBlank() } ?: defaultLocale.lang,
                 region = obj.optString("region").takeIf { it.isNotBlank() } ?: defaultLocale.region,
+                // Absent → FREE (every pre-D85 pack is free content, so this is a fact rather than
+                // a guess); UNRECOGNISED → PREMIUM, because a tier this client cannot verify
+                // entitlement for should be withheld rather than given away. See GuiltAccess.
+                access = GuiltAccess.fromId(obj.optString("access")),
             )
         }
         return out

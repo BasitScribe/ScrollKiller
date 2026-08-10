@@ -179,9 +179,13 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun clearData() {
         GuiltLines.onDataCleared(getApplication())
-        // Any running "5 more minutes" goes with the counts: the reprieve is a fact about how
-        // much the user scrolled today, and today is being deleted (D49).
+        // Any running reprieve goes with the counts: it is a fact about how much the user
+        // scrolled today, and today is being deleted (D49).
         SettingsPrefs.clearGrace(getApplication())
+        // So does how hard the app had decided to be. Escalation is derived from today's
+        // reprieves, so a wipe that left it standing would ask 80 steps of someone whose history
+        // now says they have not scrolled at all (D83).
+        SettingsPrefs.clearChallengeEscalation(getApplication())
         viewModelScope.launch { repository.clearAll() }
     }
 }

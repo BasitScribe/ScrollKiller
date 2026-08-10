@@ -25,6 +25,10 @@ local.properties
 .idea/compiler.xml
 .idea/gradle.xml
 .idea/runConfigurations.xml
+# misc.xml records the project JDK. It looks shareable and is not: the local note in
+# PROJECT_MAP (AS ships JBR 25, Gradle's daemon wants 21) means this file says something
+# different on every machine and re-dirties itself on every IDE open.
+.idea/misc.xml
 
 # Python (backend/ and tools/) — venvs, bytecode, and tool caches.
 __pycache__/
@@ -50,6 +54,8 @@ htmlcov/
 # part of the project); which panes you happen to have open is not.
 ScrollKiller/.obsidian/workspace.json
 ScrollKiller/.obsidian/workspace-mobile.json
+# core-plugins.json is which plugins THIS machine has toggled — same class of noise.
+ScrollKiller/.obsidian/core-plugins.json
 
 # Agent/session scratch
 .artifacts/

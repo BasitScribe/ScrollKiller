@@ -4,6 +4,16 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.VisibilityThreshold
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -52,6 +62,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.scrollkiller.R
@@ -88,9 +99,15 @@ private enum class DashboardTab(val labelRes: Int, @DrawableRes val icon: Int) {
      * Was APPS (D82). The old tab showed per-platform bars for TODAY only — the same data the
      * Today tab's "By app" card already carries — so it and Insights would have been two tabs of
      * near-identical bars differing only in time window. Insights supersedes it by adding the range
-     * dimension; nothing was lost. The icon is reused: it still means "the breakdown by app".
+     * dimension; nothing was lost.
+     *
+     * ⚑ **The icon is no longer the reused one.** D82 kept `ic_nav_apps` on the grounds that it
+     * "still means the breakdown by app" — but that drawable is a HANDSET OUTLINE, drawn to mean
+     * "your phone apps", and the tab it now labels is about a range of DAYS. The screen draws
+     * ascending bars, so the glyph does too (`ic_nav_insights`). Reusing art across a rename is
+     * how a nav bar ends up pointing at the wrong idea in a way nobody re-reads.
      */
-    INSIGHTS(R.string.tab_insights, R.drawable.ic_nav_apps),
+    INSIGHTS(R.string.tab_insights, R.drawable.ic_nav_insights),
     SETTINGS(R.string.tab_settings, R.drawable.ic_nav_settings),
 }
 
@@ -153,31 +170,88 @@ fun DashboardScreen(
             }
         },
     ) { padding ->
-        when (tab) {
-            DashboardTab.TODAY -> TodayTab(total, guiltLine, breakdown, health, padding)
-            DashboardTab.INSIGHTS -> {
-                val insights by insightsViewModel.state.collectAsState()
-                InsightsTab(
-                    state = insights,
-                    onRangeChange = insightsViewModel::setRange,
-                    padding = padding,
+        // Tabs slide in the direction you moved, rather than hard-cutting. Two things this buys,
+        // both of them about ORIENTATION rather than about looking nice: a Today ⇄ Insights switch
+        // is a comparison the user is making on purpose (Run O's critical check is literally
+        // "switch between them repeatedly and confirm the numbers agree"), and a hard cut between
+        // two screens of similar-looking bars gives the eye nothing to tell it which one it is now
+        // looking at. The direction does.
+        //
+        // Cheap by construction and NOT the bubble's problem: this is an Activity's own window, so
+        // it is not drawing over anybody else's app and D30/D35's no-churn rules do not reach here.
+        // It is still kept short — a tab switch that has to be waited out is worse than a cut.
+        AnimatedContent(
+            targetState = tab,
+            label = "dashboard-tab",
+            transitionSpec = {
+                // Which way the user moved. The tabs are an ordered enum, so "forward" is simply a
+                // higher ordinal — no separate direction state to keep in step with the selection.
+                val forward = targetState.ordinal > initialState.ordinal
+                val travel = { width: Int -> width / TAB_SLIDE_FRACTION }
+
+                // ## SPRING, not tween — and this is the one place in the app where that is safe
+                //
+                // Material 3 Expressive's motion system replaces duration-based easing with spring
+                // physics, and it is most of what separates a UI that feels premium from one that
+                // feels merely correct: a tween arrives at a fixed time regardless of how far it
+                // travelled, so every transition has the same rhythm no matter what happened.
+                // A spring's timing falls out of the distance and the physics, which is why it
+                // reads as an object moving rather than as a value being scheduled.
+                //
+                // ⚑ It is deliberately NOT used on the overlay bubble. A spring has no bounded
+                // duration by construction, and `BubbleMotionTest` asserts the bubble's motion
+                // budget against `GuiltCadence.DISPLAY_MS` — an unbounded settle cannot satisfy a
+                // budget, and the reading time D83 bought is not negotiable. This is the app's own
+                // Activity window, drawing over nothing and competing with no sentence, so the
+                // constraint genuinely does not apply here. Two surfaces, two motion systems, for a
+                // stated reason rather than by drift.
+                val position = spring(
+                    dampingRatio = Spring.DampingRatioLowBouncy,
+                    stiffness = Spring.StiffnessMediumLow,
+                    visibilityThreshold = IntOffset.VisibilityThreshold,
+                )
+                // Opacity stays on a tween on purpose. A bouncing ALPHA is visible as flicker
+                // rather than as spring — overshoot past 1.0 clamps, so the bounce is silently
+                // half-swallowed and what is left looks like a dropped frame.
+                val fade = tween<Float>(TAB_FADE_MS)
+
+                val enter = slideInHorizontally(position) { w ->
+                    if (forward) travel(w) else -travel(w)
+                } + fadeIn(fade)
+                // The outgoing tab leaves the OPPOSITE way to the one arriving, so the pair reads as
+                // one movement rather than as two screens crossing.
+                val exit = slideOutHorizontally(position) { w ->
+                    if (forward) -travel(w) else travel(w)
+                } + fadeOut(fade)
+                enter togetherWith exit
+            },
+        ) { current ->
+            when (current) {
+                DashboardTab.TODAY -> TodayTab(total, guiltLine, breakdown, health, padding)
+                DashboardTab.INSIGHTS -> {
+                    val insights by insightsViewModel.state.collectAsState()
+                    InsightsTab(
+                        state = insights,
+                        onRangeChange = insightsViewModel::setRange,
+                        padding = padding,
+                    )
+                }
+                DashboardTab.SETTINGS -> SettingsTab(
+                    accessibilityEnabled = accessibilityEnabled,
+                    canDrawOverlays = canDrawOverlays,
+                    bubbleEnabled = bubbleEnabled,
+                    onToggleBubble = viewModel::setBubbleEnabled,
+                    blockingPlatforms = viewModel.blockingPlatforms,
+                    dailyLimit = dailyLimit,
+                    onSetDailyLimit = viewModel::setDailyLimit,
+                    guiltLocale = guiltLocale,
+                    onPickGuiltLocale = viewModel::setGuiltLocale,
+                    onOpenAccessibilitySettings = onOpenAccessibilitySettings,
+                    onOpenOverlaySettings = onOpenOverlaySettings,
+                    onClearData = viewModel::clearData,
+                    contentPadding = padding,
                 )
             }
-            DashboardTab.SETTINGS -> SettingsTab(
-                accessibilityEnabled = accessibilityEnabled,
-                canDrawOverlays = canDrawOverlays,
-                bubbleEnabled = bubbleEnabled,
-                onToggleBubble = viewModel::setBubbleEnabled,
-                blockingPlatforms = viewModel.blockingPlatforms,
-                dailyLimit = dailyLimit,
-                onSetDailyLimit = viewModel::setDailyLimit,
-                guiltLocale = guiltLocale,
-                onPickGuiltLocale = viewModel::setGuiltLocale,
-                onOpenAccessibilitySettings = onOpenAccessibilitySettings,
-                onOpenOverlaySettings = onOpenOverlaySettings,
-                onClearData = viewModel::clearData,
-                contentPadding = padding,
-            )
         }
     }
 }
@@ -766,6 +840,25 @@ private fun SettingRow(title: String, subtitle: String, control: @Composable () 
 
 /** Bottom-nav icon size. Material's own nav spec, and the size the mascot head was cropped for. */
 private const val NAV_ICON_DP = 24
+
+/**
+ * The tab crossfade's length, in ms.
+ *
+ * Only the OPACITY is on a clock — position is a spring, whose timing comes from the physics rather
+ * than from a number (see the transitionSpec). Short on purpose: a tab switch the user has to wait
+ * out is worse than a hard cut, and the motion is here to say WHICH WAY you moved, not to be
+ * watched. Kept slightly shorter than the spring settles, so the content is fully readable while
+ * the last few pixels of travel resolve underneath it.
+ */
+private const val TAB_FADE_MS = 160
+
+/**
+ * The incoming tab starts this fraction of the screen width off to the side — a *fraction*, so
+ * it travels the same visual distance on a tablet as on a compact phone, which a fixed dp offset
+ * would not. A full-width slide would read as a page turn and, on Insights, would drag a chart
+ * across the screen for no reason; an eighth is enough for the eye to catch the direction.
+ */
+private const val TAB_SLIDE_FRACTION = 8
 
 /**
  * Alpha for the hero card's state-accent tint. Low enough that the mascot art and the numeral stay

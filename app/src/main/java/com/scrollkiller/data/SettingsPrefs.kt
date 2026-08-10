@@ -1,10 +1,13 @@
 package com.scrollkiller.data
 
 import android.content.Context
+import com.scrollkiller.challenge.ChallengeEscalation
+import com.scrollkiller.challenge.ChallengeRegistry
 import com.scrollkiller.guilt.GuiltLocale
 import com.scrollkiller.service.BlockLimits
 import com.scrollkiller.service.Platform
 import com.scrollkiller.service.PlatformRegistry
+import java.time.LocalDate
 import java.util.UUID
 
 /**
@@ -31,14 +34,41 @@ object SettingsPrefs {
      */
     private const val KEY_DAILY_LIMIT_PREFIX = "daily_limit_"
 
-    /** Per-platform key prefix. See [graceUntilMs] for why the reprieve stayed per-platform. */
+    /**
+     * LEGACY per-platform reprieve keys, read-only since the reprieve went global.
+     *
+     * Kept, not deleted, for the same reason [KEY_DAILY_LIMIT_PREFIX] is: a migration that destroys
+     * its own input cannot be re-run or audited. [graceUntilMs] still reads these as a fallback so
+     * nobody loses a reprieve they already paid for across the update that changed this.
+     */
     private const val KEY_GRACE_UNTIL_PREFIX = "block_grace_until_"
+
+    /**
+     * THE reprieve deadline. ONE, across every blocking app — see [graceUntilMs].
+     */
+    private const val KEY_GRACE_UNTIL = "block_grace_until_global"
+
+    /**
+     * Per-CHALLENGE key prefix: how many reprieves that challenge has bought today (D83).
+     *
+     * Keyed by [com.scrollkiller.challenge.ChallengeSpec.id] and not by platform, because the
+     * escalation follows the CHALLENGE — walking twenty steps out of Instagram and walking twenty
+     * steps out of YouTube are the same act absorbed the same way, and D76 already made the limit
+     * itself one global number.
+     */
+    private const val KEY_CHALLENGE_USES_PREFIX = "challenge_uses_"
+
+    /** The day [KEY_CHALLENGE_USES_PREFIX]'s counters belong to. See [challengeUses]. */
+    private const val KEY_CHALLENGE_USES_DAY = "challenge_uses_day"
 
     /** Day key of the last "the block is dead" early warning. See [blockWarnedOn]. */
     private const val KEY_BLOCK_WARNED_ON = "block_warned_on"
 
     /** Observed: the system refused our overlay window. See [overlayRuntimeDenied]. */
     private const val KEY_OVERLAY_RUNTIME_DENIED = "overlay_runtime_denied"
+
+    /** Stand-in for a premium entitlement until monetisation. See [premiumOverride]. */
+    private const val KEY_PREMIUM_OVERRIDE = "premium_override"
 
     /** Whether the floating counter bubble may show. Default on (matches Phase-1 behaviour). */
     fun isBubbleEnabled(context: Context): Boolean =
@@ -107,11 +137,9 @@ object SettingsPrefs {
     }
 
     /**
-     * Wall-clock millis until which the block is suppressed on [platform] — the "5 more minutes"
-     * reprieve (D49). 0 means no reprieve. Two writers, the free tap and a completed challenge,
-     * differing only in the constant they add; the storage shape is the same either way because a
-     * deadline is the right representation whoever earned it. (Briefly one writer between D74 and
-     * D75, which changed nothing here.)
+     * Wall-clock millis until which the block is suppressed — the earned reprieve (D49). 0 means
+     * no reprieve. Since D77 a completed challenge is the only writer; a deadline was the right
+     * representation back when the free tap wrote here too, and still is.
      *
      * PERSISTED, and that is the point: the app made a promise measured in minutes, and a
      * reprieve that a service restart or a crash silently revokes is a promise broken at the
@@ -124,20 +152,131 @@ object SettingsPrefs {
      * consequence is that winding the device clock BACKWARDS extends the user's own reprieve.
      * That is a self-harm cheat, not a way to get trapped, and defending it would cost more than
      * it is worth.
+     *
+     * ## ⚑ ONE REPRIEVE, ACROSS EVERY BLOCKING APP — and it used to be per-platform (D88)
+     * This was keyed by platform, which was right while every platform had its own limit. **D76
+     * made the limit GLOBAL** — one budget for the whole doomscrolling day across Instagram and
+     * YouTube together — and the reprieve was not moved with it. The result was a bug a user hit
+     * within minutes of real use: walk twenty steps to get out of Instagram, switch to YouTube
+     * Shorts, and the block is waiting there immediately, because the global count is still over
+     * the global limit and YouTube's own grace key is zero.
+     *
+     * That is the user paying the price once and being charged again per app. It is incoherent
+     * with D76 (one budget), with D77 (the challenge is the ONLY way past a block), and with D83
+     * (escalation is already charged across the whole challenge set, precisely so the price cannot
+     * be dodged by switching). The reprieve is what the challenge BUYS, and it has to be
+     * denominated in the same currency as the thing it is spent against.
+     *
+     * So: one key, one deadline, and the exercise you did in Instagram gets you out of YouTube too.
      */
-    fun graceUntilMs(context: Context, platform: Platform): Long =
-        prefs(context).getLong(KEY_GRACE_UNTIL_PREFIX + platform.id, 0L)
-
-    fun setGraceUntilMs(context: Context, platform: Platform, atMs: Long) {
-        prefs(context).edit().putLong(KEY_GRACE_UNTIL_PREFIX + platform.id, atMs).apply()
+    fun graceUntilMs(context: Context): Long {
+        val p = prefs(context)
+        val global = p.getLong(KEY_GRACE_UNTIL, 0L)
+        if (global != 0L) return global
+        // Nothing global recorded yet. Fall back to the largest legacy per-platform deadline, so a
+        // reprieve bought minutes before this change landed is honoured rather than silently
+        // revoked — MAX rather than the current platform's, because the whole point of the change
+        // is that where it was earned no longer matters. Self-heals: the next write is global, and
+        // this branch stops being reached.
+        return Platform.entries.maxOf { p.getLong(KEY_GRACE_UNTIL_PREFIX + it.id, 0L) }
     }
 
-    /** Drop every platform's reprieve. Called from Settings → Clear data, with the counts. */
+    fun setGraceUntilMs(context: Context, atMs: Long) {
+        prefs(context).edit().putLong(KEY_GRACE_UNTIL, atMs).apply()
+    }
+
+    /** Drop the reprieve, legacy keys included. Called from Settings → Clear data, with the counts. */
     fun clearGrace(context: Context) {
         val edit = prefs(context).edit()
+        edit.remove(KEY_GRACE_UNTIL)
+        // The legacy keys must go too, or clearing data would leave a stale per-platform deadline
+        // that graceUntilMs's fallback would happily resurrect on the next read.
         Platform.entries.forEach { edit.remove(KEY_GRACE_UNTIL_PREFIX + it.id) }
         edit.apply()
     }
+
+    /**
+     * How many reprieves [challengeId] has bought TODAY — the rung
+     * [com.scrollkiller.challenge.ChallengeEscalation] escalates from (D83).
+     *
+     * ## The daily reset is a property of the READ, not a job that runs
+     * Returning 0 whenever the stored day is not today means the reset cannot be missed. There is
+     * nothing to schedule, nothing to run at midnight, and no way for a device that was switched
+     * off across the rollover to wake up still escalated — which is exactly why [GuiltFiring]
+     * baselines on a day change rather than being told about one, and the same shape as it.
+     *
+     * ## Why the day is reset DAILY at all
+     * The whole app is denominated in days: the limit is daily (D76), the counts are daily, the
+     * guilt cadence baselines per day, streaks are per day (D81). Escalation carrying across
+     * midnight would be the only mechanic here that does not, and a fresh morning that opens at
+     * "hold it for two minutes" is charging the user for yesterday — which reads as the app being
+     * broken rather than being strict, and D9's anti-uninstall principle applies to the mechanic
+     * (D50).
+     *
+     * Device-local `LocalDate`, the same interim boundary the counts and the guilt cadence use
+     * until the server owns the day in Phase 3 (D14). It moves when they move, not before.
+     *
+     * ## Why the whole map, rather than one id at a time
+     * Escalation charges a challenge for its OWN reprieves *and* a share of every other
+     * challenge's ([ChallengeEscalation.effectiveUses]), so the caller needs both numbers. Read
+     * separately they could straddle midnight — own returning 0 from the new day while the total
+     * still reflected the old one, which would price a fresh challenge as though it had been used.
+     * One snapshot answers both questions against one day key, so that skew is not expressible.
+     *
+     * Empty map on a stale day; callers default to 0.
+     *
+     * @param dayKey defaulted so callers never compute a date; injectable so the rollover is
+     *   reachable in a test without winding a device clock.
+     */
+    fun challengeUsesToday(context: Context, dayKey: String = today()): Map<String, Int> {
+        val p = prefs(context)
+        if (p.getString(KEY_CHALLENGE_USES_DAY, null) != dayKey) return emptyMap()
+        return ChallengeRegistry.enabled.associate {
+            it.id to p.getInt(KEY_CHALLENGE_USES_PREFIX + it.id, 0)
+        }
+    }
+
+    /**
+     * [challengeId] just bought a reprieve — escalate it for next time.
+     *
+     * Called ONLY from the completion path. Not on start and not on cancel: a user who opens the
+     * chooser, reads the rows and backs out has not bought anything, and charging them for looking
+     * is the same mistake as banking partial progress across blocks (D50g).
+     *
+     * The stale-day branch SWEEPS every other challenge's counter rather than only rolling the day
+     * stamp. Leaving them would be a real bug and not merely untidy: [challengeUses] gates on ONE
+     * shared day key, so writing today's stamp while yesterday's counters sat in the file would
+     * make every challenge the user did *not* complete today read back at yesterday's rung.
+     */
+    fun noteChallengeCompleted(
+        context: Context,
+        challengeId: String,
+        dayKey: String = today(),
+    ) {
+        val p = prefs(context)
+        val stale = p.getString(KEY_CHALLENGE_USES_DAY, null) != dayKey
+        val current = if (stale) 0 else p.getInt(KEY_CHALLENGE_USES_PREFIX + challengeId, 0)
+        val edit = p.edit()
+        if (stale) {
+            ChallengeRegistry.enabled.forEach { edit.remove(KEY_CHALLENGE_USES_PREFIX + it.id) }
+            edit.putString(KEY_CHALLENGE_USES_DAY, dayKey)
+        }
+        edit.putInt(KEY_CHALLENGE_USES_PREFIX + challengeId, current + 1).apply()
+    }
+
+    /**
+     * Put every challenge back to its base target. Called from Settings → Clear data, beside
+     * [clearGrace] — someone wiping their history should not find the app still remembering how
+     * hard it had decided to be.
+     */
+    fun clearChallengeEscalation(context: Context) {
+        val edit = prefs(context).edit()
+        ChallengeRegistry.enabled.forEach { edit.remove(KEY_CHALLENGE_USES_PREFIX + it.id) }
+        edit.remove(KEY_CHALLENGE_USES_DAY).apply()
+    }
+
+    /** Today, device-local, in the ISO form every day key in the app uses. */
+    private fun today(): String = LocalDate.now().toString()
 
     /**
      * The day the user was last warned that the block cannot fire, or null if never (D51).
@@ -174,6 +313,22 @@ object SettingsPrefs {
 
     fun setOverlayRuntimeDenied(context: Context, denied: Boolean) {
         prefs(context).edit().putBoolean(KEY_OVERLAY_RUNTIME_DENIED, denied).apply()
+    }
+
+    /**
+     * Stand-in for a premium entitlement (D85). Defaults FALSE — nobody can buy anything yet, so
+     * the shipped behaviour is that everybody is on the free pack.
+     *
+     * Exists so the premium GATE is real and testable from the day the premium CONTENT lands,
+     * rather than being a field nothing reads until monetisation. Read only through
+     * [com.scrollkiller.guilt.Entitlements], which is the seam a Play Billing check replaces —
+     * **and when it does, this must not survive as a way to unlock content in a release build.**
+     */
+    fun premiumOverride(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_PREMIUM_OVERRIDE, false)
+
+    fun setPremiumOverride(context: Context, premium: Boolean) {
+        prefs(context).edit().putBoolean(KEY_PREMIUM_OVERRIDE, premium).apply()
     }
 
     /**

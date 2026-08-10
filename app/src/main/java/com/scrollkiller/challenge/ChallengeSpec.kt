@@ -13,12 +13,16 @@ import kotlin.random.Random
  * already needs two measurement paths depending on what the device offers (see [StepSensorSource]),
  * and [JUMP] and [FACE_DOWN] both read the accelerometer while being nothing alike to perform.
  *
- * All four are now wired — the suite is complete. The declared-but-unbuilt discipline that got it
- * here (a written menu the next challenge picks from, with [ChallengeRegistry.IMPLEMENTED] stating
- * the gap honestly and a test enforcing it) is still the rule for whatever comes next; the enum is
- * simply, for the moment, fully implemented.
+ * All seven are wired. The declared-but-unbuilt discipline that got the first four here (a written
+ * menu the next challenge picks from, with [ChallengeRegistry.IMPLEMENTED] stating the gap honestly
+ * and a test enforcing it) is still the rule for whatever comes next; the enum is simply, for the
+ * moment, fully implemented.
+ *
+ * [SHAKE], [FLIP] and [BALANCE] were added together (D84) to widen the set for people the original
+ * four served badly — every one of them works seated, in silence, in a shared room, and needs no
+ * runtime permission and no floor nobody lives under.
  */
-enum class ChallengeType { WALK, JUMP, FACE_DOWN, FOREHEAD }
+enum class ChallengeType { WALK, JUMP, FACE_DOWN, FOREHEAD, SHAKE, FLIP, BALANCE }
 
 /**
  * HOW a challenge's progress is measured from sensor data.
@@ -41,6 +45,18 @@ enum class ChallengeType { WALK, JUMP, FACE_DOWN, FOREHEAD }
  *   which is exactly the gate the registry exists to hold shut. Also the only strategy needing two
  *   sensors, so it is the only one whose availability can fail on hardware alone — proximity is
  *   near-universal but not guaranteed. See [ProximityHoldSource].
+ * - [ACCEL_SHAKE]: `TYPE_ACCELEROMETER` with gravity ESTIMATED AND SUBTRACTED, counting bursts of the
+ *   user's own motion. Its own strategy rather than a flavour of [ACCEL_PEAKS] because the two read
+ *   opposite things out of the same hardware — peaks is a magnitude story where direction is
+ *   irrelevant, shake is entirely a direction story and magnitude discards it. See [ShakeDetector]
+ *   for why the obvious shared implementation reads zero shakes no matter how hard the phone moves.
+ * - [ORIENTATION_FLIPS]: `TYPE_ACCELEROMETER` Z, counting CHANGES of face-up/face-down rather than
+ *   timing one. Same axis as [ORIENTATION_HOLD] and deliberately not the same strategy: a hold is
+ *   defined by nothing happening and a flip by something happening, so sharing would produce one
+ *   class whose meaning depended on its caller. See [FlipDetector].
+ * - [TILT_BALANCE]: `TYPE_ACCELEROMETER`, level AND held — [BalanceDetector] decides, [HoldDetector]
+ *   times it unchanged. The third hold, and the one whose anti-cheat is openly the weakest in the
+ *   suite; [BalanceDetector] says so and names the constant to change.
  *
  * [ChallengeRegistry.IMPLEMENTED] names which of these the engine actually honours, and a test
  * asserts every enabled spec uses one — so a spec added without its sensor code fails the build
@@ -52,6 +68,9 @@ enum class SensorStrategy {
     ACCEL_PEAKS,
     ORIENTATION_HOLD,
     PROXIMITY_HOLD,
+    ACCEL_SHAKE,
+    ORIENTATION_FLIPS,
+    TILT_BALANCE,
 }
 
 /**
@@ -102,6 +121,12 @@ enum class ProgressUnit {
  * @param unit what [target] counts, and therefore what the ring's label says. Defaults to
  *   [ProgressUnit.COUNT] because that is what every counting challenge wants and it keeps the two
  *   original specs unchanged.
+ * @param escalation how [target] grows each time this challenge buys a reprieve (D83). Defaults to
+ *   [EscalationCurve.PLUS_TEN], the counting shape, for the same reason [unit] defaults to
+ *   [ProgressUnit.COUNT]. **[target] is the BASE**, the rung a fresh day starts on — what the user
+ *   is actually asked for is [ChallengeEscalation.targetFor], and by the time a spec reaches any
+ *   view it has already been through [ChallengeEscalation.escalated], so every consumer keeps
+ *   reading [target] and none of them knows escalation exists.
  */
 data class ChallengeSpec(
     val id: String,
@@ -110,6 +135,7 @@ data class ChallengeSpec(
     val sensorStrategy: SensorStrategy,
     @StringRes val promptRes: Int,
     val unit: ProgressUnit = ProgressUnit.COUNT,
+    val escalation: EscalationCurve = EscalationCurve.PLUS_TEN,
 )
 
 /**
@@ -130,6 +156,10 @@ object ChallengeRegistry {
      * exercise anyone — and short enough that it stays a reprieve rather than a punishment. A
      * challenge people resent is a challenge people uninstall (D9's anti-uninstall principle
      * applies to the mechanic, not just the copy).
+     *
+     * Twenty is now the BASE rung: 20 → 30 → 40 → … → 80 across a day of reprieves (D83). The top
+     * of the ladder is a walk that leaves the room, which is the same mechanism asked for harder,
+     * not a different one.
      */
     private val walk = ChallengeSpec(
         id = "walk_20",
@@ -151,6 +181,11 @@ object ChallengeRegistry {
      * It exists mainly to be the option WALK is not: it needs no permission, no pedometer, and about
      * four square feet — so it works on the train, in a queue, and on the many devices with no step
      * sensor at all.
+     *
+     * Escalates 10 → 20 → 30 → 40 (D83). It caps lowest of the four in absolute terms and that is
+     * correct: forty jumps is already the most aerobic thing the app asks for, and doubling instead
+     * of stepping would have put it at eighty by the fourth block, which is a workout somebody
+     * signed up for an anti-doomscroll app to avoid.
      */
     private val jump = ChallengeSpec(
         id = "jump_10",
@@ -175,6 +210,11 @@ object ChallengeRegistry {
      *
      * Breaking it RESETS to zero rather than pausing (see [HoldDetector]) — otherwise it would be six
      * five-second flips with a peek between each, which is not a break at all.
+     *
+     * Escalates 30 → 60 → 120s and stops there (D83). [EscalationCurve.DOUBLE] because "twice as
+     * long" is how a duration's next rung reads, and the two-minute ceiling because reset-on-break
+     * compounds with length — see [ChallengeEscalation.CAP_MULTIPLE] for why that ceiling is a
+     * safety property rather than a soft one.
      */
     private val faceDown = ChallengeSpec(
         id = "face_down_30",
@@ -183,6 +223,7 @@ object ChallengeRegistry {
         sensorStrategy = SensorStrategy.ORIENTATION_HOLD,
         promptRes = R.string.challenge_face_down_prompt,
         unit = ProgressUnit.SECONDS,
+        escalation = EscalationCurve.DOUBLE,
     )
 
     /**
@@ -195,7 +236,8 @@ object ChallengeRegistry {
      * amount of counting, and it is the one the guilt pack cannot deliver.
      *
      * Requires proximity AND upright ([ProximityHoldSource]): covered alone is a thumb on a table.
-     * Same thirty seconds and the same reset-on-break as face-down.
+     * Same thirty seconds, the same reset-on-break, and the same 30 → 60 → 120s ladder as
+     * face-down.
      */
     private val forehead = ChallengeSpec(
         id = "forehead_30",
@@ -204,10 +246,86 @@ object ChallengeRegistry {
         sensorStrategy = SensorStrategy.PROXIMITY_HOLD,
         promptRes = R.string.challenge_forehead_prompt,
         unit = ProgressUnit.SECONDS,
+        escalation = EscalationCurve.DOUBLE,
     )
 
-    /** Challenges offered today. Order is the order the chooser lists them in. */
-    val enabled: List<ChallengeSpec> = listOf(walk, jump, faceDown, forehead)
+    /**
+     * Shake the phone thirty times.
+     *
+     * The one that asks for effort you can deliver **sitting down, in silence, in a shared room**.
+     * That gap is why it exists: walk needs a room and a pedometer, jump needs a floor nobody lives
+     * under, and the two holds ask for patience rather than effort — so a user on a train, at a desk,
+     * or in a flat at 2am previously had only the passive options. This is the first challenge that
+     * is genuinely tiring and genuinely available everywhere.
+     *
+     * Thirty counts direction bursts, not full arm swings — roughly seven seconds of committed
+     * shaking, escalating to about thirty at the cap. See [ShakeDetector] for why a lazy wave does
+     * not register and why a jump does.
+     */
+    private val shake = ChallengeSpec(
+        id = "shake_30",
+        type = ChallengeType.SHAKE,
+        target = 30,
+        sensorStrategy = SensorStrategy.ACCEL_SHAKE,
+        promptRes = R.string.challenge_shake_prompt,
+    )
+
+    /**
+     * Turn the phone over ten times.
+     *
+     * The fiddly one, and its job in the set is ATTENTION rather than exertion. Walking and jumping
+     * can both be done on autopilot while the mind stays in the feed; turning a phone over and back
+     * ten times cannot, because each flip has to be completed deliberately before the next one
+     * registers. It is the cheapest challenge to perform and the hardest to do absent-mindedly.
+     *
+     * Ten means ten CHANGES of orientation — five there-and-back cycles — and it is also the only
+     * challenge that physically takes the screen out of view on every second count, which is worth
+     * more against a scroll trance than the effort suggests.
+     */
+    private val flip = ChallengeSpec(
+        id = "flip_10",
+        type = ChallengeType.FLIP,
+        target = 10,
+        sensorStrategy = SensorStrategy.ORIENTATION_FLIPS,
+        promptRes = R.string.challenge_flip_prompt,
+    )
+
+    /**
+     * Balance the phone flat on your palm for twenty seconds.
+     *
+     * The third hold, and it fills the gap the first two leave: face-down and forehead both ask you
+     * to stop and wait, which a determined user can do while thinking about the feed. Balancing
+     * demands continuous fine motor attention — any thumb pressure tips it, and the reset means a
+     * lapse costs the whole attempt.
+     *
+     * TWENTY rather than the holds' thirty because it is harder per second: the other two reach a
+     * stable resting state and this one never does. It doubles to eighty at the cap, which is a long
+     * time to keep a phone level on an open hand.
+     *
+     * The honest caveat, recorded here as well as in [BalanceDetector]: its "held, not resting"
+     * guard is a tremor floor, which is the weakest anti-cheat in the suite. It is set to favour a
+     * false pass over a false fail, and one constant fixes it if a device run disagrees.
+     */
+    private val balance = ChallengeSpec(
+        id = "balance_20",
+        type = ChallengeType.BALANCE,
+        target = 20,
+        sensorStrategy = SensorStrategy.TILT_BALANCE,
+        promptRes = R.string.challenge_balance_prompt,
+        unit = ProgressUnit.SECONDS,
+        escalation = EscalationCurve.DOUBLE,
+    )
+
+    /**
+     * Challenges offered today. Order is the order the chooser lists them in.
+     *
+     * Ordered EFFORT-FIRST, passive last, so the chooser does not open on the easiest row. The three
+     * added at D84 slot in beside the existing option they are closest to rather than being appended
+     * as a block, because the list is read as a menu and grouping by kind is what makes a seven-row
+     * chooser scannable.
+     */
+    val enabled: List<ChallengeSpec> =
+        listOf(walk, jump, shake, flip, faceDown, forehead, balance)
 
     /**
      * The strategies the engine actually implements. The gap between this and [SensorStrategy]'s
@@ -220,6 +338,9 @@ object ChallengeRegistry {
         SensorStrategy.ACCEL_PEAKS,
         SensorStrategy.ORIENTATION_HOLD,
         SensorStrategy.PROXIMITY_HOLD,
+        SensorStrategy.ACCEL_SHAKE,
+        SensorStrategy.ORIENTATION_FLIPS,
+        SensorStrategy.TILT_BALANCE,
     )
 
     /**
