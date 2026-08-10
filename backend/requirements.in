@@ -14,3 +14,20 @@
 fastapi==0.140.13
 pydantic-settings==2.6.1
 uvicorn[standard]==0.32.1
+
+# --- Data layer (3b) ---
+#
+# The [asyncio] extra is what pulls in greenlet. SQLAlchemy's async API is a
+# greenlet-mediated shim over the same sync internals, so without the extra the
+# ORM imports fine and then fails at the first `await` — a runtime failure for a
+# missing build-time dependency, which is the worst place to discover it.
+sqlalchemy[asyncio]==2.0.51
+
+# The driver. Note the URL scheme is `postgresql+asyncpg://` everywhere; a bare
+# `postgresql://` silently selects the SYNC psycopg dialect, which is not
+# installed, and the error names psycopg rather than the typo.
+asyncpg==0.31.0
+
+# Migrations. Runtime, not dev: the release image runs `alembic upgrade head`
+# on deploy, so the tool has to exist in the image that ships.
+alembic==1.19.1

@@ -10,6 +10,27 @@
 
 -c requirements.txt
 
+# The IANA timezone database as a wheel.
+#
+# ⚑ Dev-only, and the asymmetry is deliberate. `zoneinfo` reads the SYSTEM tz
+# database; Linux has one at /usr/share/zoneinfo and **Windows has none at all**,
+# so `assert_tzdata_available()` fails at app construction and the entire suite
+# dies in conftest before a single test runs. That is why this had never been
+# noticed: CI is Linux, and this project's dev machine is Windows, so the backend
+# gate was passing in the only place anyone had run it.
+#
+# NOT in requirements.in, because the runtime image gets its copy from the apt
+# `tzdata` package instead (see the Dockerfile, which explains why at length):
+# one that the base image's security updates keep patched, rather than one pinned
+# in a lockfile that only moves when someone remembers to recompile it.
+tzdata==2026.3
+
+# An async driver for a database that needs no server, so `ping()` and the
+# session factory are covered by executing them rather than by faking them.
+# Deliberately DEV-only: nothing in app/ may branch on it, and a test asserts
+# that the production connect-args path is the asyncpg one (see test_db.py).
+aiosqlite==0.22.1
+
 httpx==0.28.1
 mypy==1.13.0
 pytest==8.3.4
