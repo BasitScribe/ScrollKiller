@@ -14,13 +14,20 @@ import android.view.accessibility.AccessibilityNodeInfo
  * `Auto-dubbed`. If any of that became "the identity", it would change constantly WITHOUT the
  * user swiping — producing exactly the idle-overcount the identity check exists to prevent.
  *
- * So an identity is only ever taken from one of two provably per-item sources:
+ * So an identity is only ever taken from provably per-item sources:
  *  1. a CHANNEL HANDLE (`@SagarsKitchen`) — the capture showed this on the player container's
  *     `contentDescription`, changing exactly once per advance; and
- *  2. failing that, the text of a node whose id is in [PlatformSpec.identityTitleHints] — an
- *     explicit ALLOWLIST, never "whatever text we found".
+ *  2. the text of a node whose id is in [PlatformSpec.identityTitleHints] — an explicit
+ *     ALLOWLIST, never "whatever text we found".
  * Anything else yields `null`, which the detector treats as "no information" and ignores.
  * A wrong guess here therefore UNDERcounts, never overcounts.
+ *
+ * ⚑ **BOTH are collected, not one-or-the-other.** This used to be handle-first-else-title, and
+ * that is exactly how a channel's own Shorts tab came to count ONE item per session: every Short
+ * there shares a handle, the title was never consulted because a handle existed, and so every
+ * item after the first scored `UNCHANGED`. D34's capture had recorded the title alongside the
+ * handle all along; the extraction was throwing it away. They now travel together as an
+ * [ItemIdentity], which is what lets "same creator, different Short" be expressed at all.
  *
  * Only the HANDLE TOKEN is kept, not the whole string: a description like
  * `@SomeChannel · 1.2M subscribers` would otherwise change identity every time the subscriber
@@ -75,7 +82,7 @@ object ReelIdentity {
      * [source] is owned by the CALLER and is not recycled here.
      */
     @Suppress("DEPRECATION") // recycle() is correct on API 26–32; a no-op on 33+.
-    fun identityOf(source: AccessibilityNodeInfo?, spec: PlatformSpec): String? {
+    fun identityOf(source: AccessibilityNodeInfo?, spec: PlatformSpec): ItemIdentity? {
         if (source == null || spec.identityAnchors.isEmpty()) return null
         val anchor = findAnchor(source, spec) ?: return null
         return try {
@@ -88,38 +95,49 @@ object ReelIdentity {
     }
 
     /**
-     * Pure decision: which of [candidates] is the item's identity? Android-free so the rule
-     * that separates "@SagarsKitchen" from "Auto-dubbed" is unit-tested against the literal
-     * strings from the device capture rather than reasoned about.
+     * Pure decision: what is this item's identity? Android-free so the rule that separates
+     * "@SagarsKitchen" from "Auto-dubbed" is unit-tested against the literal strings from the
+     * device capture rather than reasoned about.
      *
-     * Handle first, title-hint second, nothing third. Order matters: the handle is the proven
-     * signal, the title hints are unverified ids that only get consulted when no handle exists.
+     * ⚑ Collects BOTH fields rather than returning the first one found. The handle is still the
+     * proven, load-bearing signal and the title ids are still an unverified allowlist — but a
+     * title that is only read when no handle exists is a title that is never read, since the
+     * handle is present on virtually every frame. Two Shorts by one creator were therefore
+     * indistinguishable. The title's lower confidence is handled by
+     * [ItemIdentity.differsFrom], which only ever compares fields present on both sides, so an
+     * absent or unrecognised title costs nothing and cannot manufacture an advance.
+     *
+     * Returns null when neither field was found — "no information", which the detector ignores.
      */
-    fun pick(candidates: List<Candidate>, spec: PlatformSpec): String? {
-        for (candidate in candidates) {
-            handleIn(candidate.text)?.let { return it }
+    fun pick(candidates: List<Candidate>, spec: PlatformSpec): ItemIdentity? {
+        val handle = candidates.firstNotNullOfOrNull { handleIn(it.text) }
+        val title = if (spec.identityTitleHints.isEmpty()) null else {
+            candidates.firstNotNullOfOrNull { candidate ->
+                val id = candidate.shortId ?: return@firstNotNullOfOrNull null
+                if (spec.identityTitleHints.none { id.contains(it) }) null
+                else normalizeTitle(candidate.text)
+            }
         }
-        if (spec.identityTitleHints.isEmpty()) return null
-        for (candidate in candidates) {
-            val id = candidate.shortId ?: continue
-            if (spec.identityTitleHints.none { id.contains(it) }) continue
-            normalizeTitle(candidate.text)?.let { return it }
-        }
-        return null
+        return if (handle == null && title == null) null else ItemIdentity(handle, title)
     }
 
     /** The leading `@handle` token of [text], or null. See [HANDLE] for why it's anchored. */
     private fun handleIn(text: String): String? = HANDLE.find(text.trim())?.value
 
     /**
-     * A title-hint candidate as an identity. Namespaced with `t:` so a title can never collide
-     * with a handle, whitespace-collapsed and length-capped so trivial re-wrapping or a huge
-     * caption doesn't read as a different item.
+     * A title-hint candidate as an identity field: whitespace-collapsed and length-capped, so
+     * trivial re-wrapping or a huge caption doesn't read as a different item.
+     *
+     * The old `t:` prefix is gone. It existed so a title could never be mistaken for a handle
+     * back when both shared one string field; now they are separate fields and
+     * [ItemIdentity.differsFrom] never compares one against the other, so the separation is
+     * structural. A prefix carrying a guarantee the type already makes is just a string somebody
+     * will eventually strip while tidying up.
      */
     private fun normalizeTitle(text: String): String? {
         val collapsed = text.trim().replace(WHITESPACE, " ")
         if (collapsed.isEmpty()) return null
-        return "t:" + collapsed.take(MAX_TITLE_LENGTH)
+        return collapsed.take(MAX_TITLE_LENGTH)
     }
 
     // --- node walks ------------------------------------------------------------------------

@@ -296,7 +296,7 @@ class ReelScrollAccessibilityService : AccessibilityService() {
                     // back to its bounded DISCOVERY scan and print the `id:text` pairs actually
                     // in the tree — which is exactly the evidence needed to explain why nothing
                     // matched. Printing a dash there would hide the only useful thing.
-                    identity = identity,
+                    identity = identity?.describe(),
                 )
             }
         } finally {

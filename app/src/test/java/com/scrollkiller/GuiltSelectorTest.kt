@@ -15,6 +15,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
+import kotlin.random.Random
 
 /**
  * The picker every surface shares, tested against the REAL bundled pack — the escalation,
@@ -45,11 +46,24 @@ class GuiltSelectorTest {
         wallMs = t0 + dayOffset * day + step * 60_000L,
     )
 
+    /**
+     * ⚑ The seed is not decoration — without it this file is nondeterministic.
+     *
+     * [GuiltSelector] takes an injectable [Random] specifically so the weighted draw can be
+     * pinned, and this helper used to leave it on `Random.Default`. Every assertion about WHICH
+     * line came back was therefore a coin flip with good odds, and `the fallback picks from the
+     * least recently shown` genuinely failed on 2026-08-11 having passed an hour earlier with no
+     * code change between the two runs.
+     *
+     * A test that fails one run in ten is worse than no test: the failure gets re-run until it
+     * goes green and the suite teaches people that red means "try again".
+     */
     private fun selector(
         history: GuiltHistory = GuiltHistory(),
         installId: String = "install-abc",
         onExhausted: ((GuiltSelector.PoolExhausted) -> Unit)? = null,
-    ) = GuiltSelector(installId, history, onPoolExhausted = onExhausted)
+        random: Random = Random(DRAW_SEED),
+    ) = GuiltSelector(installId, history, random = random, onPoolExhausted = onExhausted)
 
     /* --- silence + escalation -------------------------------------------------------- */
 
@@ -266,5 +280,13 @@ class GuiltSelectorTest {
                 selector.current(GuiltPack.FALLBACK, locale, count, at(0, i)),
             )
         }
+    }
+
+    private companion object {
+        /**
+         * Arbitrary but FIXED. Any value works; what matters is that it never changes silently,
+         * so a red run means a real regression rather than an unlucky draw.
+         */
+        const val DRAW_SEED = 20260811L
     }
 }

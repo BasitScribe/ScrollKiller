@@ -15,8 +15,8 @@ package com.scrollkiller.service
  * (`@SagarsKitchen` → `@PakWheels` → `@DSMotoTube`), extracted by [ReelIdentity]. So we count
  * the CHANGE, and the 40 repeats collapse to nothing.
  *
- * ## The two rules that are easy to get wrong
- * Both fail toward UNDERcount, which is the direction we've chosen everywhere (D24/D27):
+ * ## The three rules that are easy to get wrong
+ * All fail toward UNDERcount, which is the direction we've chosen everywhere (D24/D27):
  *
  *  1. A `null` identity (unreadable frame) NEVER clears [lastIdentity]. If it did, a single
  *     momentarily-unreadable frame would make the very next read of the SAME Short look like
@@ -25,6 +25,21 @@ package com.scrollkiller.service
  *     new item is therefore still "unseen", and one of the ~40 content-changes that follow
  *     within the next second counts it once the floor has passed. Storing it on rejection
  *     would silently drop genuinely fast swipes.
+ *  3. "Not provably different" is the test, NOT "equal" — see [ItemIdentity.differsFrom]. Only
+ *     fields present on both sides are compared, so a title that renders a frame after the
+ *     handle cannot look like an advance.
+ *
+ * ## ⚑ What this used to get wrong, and it was not an edge case
+ * The identity was a single string, in practice always the channel handle. So two consecutive
+ * Shorts by the SAME creator were `UNCHANGED` and the second never counted — and on a channel's
+ * own Shorts tab, where every item shares one handle, an entire session counted **one**. The
+ * `15 swipes count 15` acceptance test passed throughout, because it feeds fifteen *different*
+ * handles; the repeat case was never written. Reported from real use, 2026-08-11.
+ *
+ * That is also why [ItemIdentity.mergedWith] is called on the UNCHANGED path rather than nothing
+ * happening there: staying on one Short is when we learn the fields its first frame did not
+ * carry, and it is the only chance to learn them before the next item needs something to differ
+ * from.
  *
  * @param minAdvanceIntervalMs floor between two COUNTED advances (see
  *   [PlatformSpec.minAdvanceIntervalMs], whose meaning follows the strategy).
@@ -50,8 +65,11 @@ class IdentityAdvanceDetector(private val minAdvanceIntervalMs: Long) {
         FLOORED,
     }
 
-    /** Identity of the last item we COUNTED. Null until the first successful read. */
-    private var lastIdentity: String? = null
+    /**
+     * Identity of the last item we COUNTED, enriched by every same-item read since. Null until
+     * the first successful read.
+     */
+    private var lastIdentity: ItemIdentity? = null
 
     /** When we last counted, for the floor. UNSET before any count. */
     private var lastCountAtMs = UNSET
@@ -67,9 +85,18 @@ class IdentityAdvanceDetector(private val minAdvanceIntervalMs: Long) {
      * @param identity the item's identity, or null when this frame yielded nothing usable.
      * @param atMs event time in millis (monotonic within a session is enough).
      */
-    fun onIdentity(identity: String?, atMs: Long): Advance {
-        if (identity == null) return Advance.UNREADABLE       // keep what we know
-        if (identity == lastIdentity) return Advance.UNCHANGED
+    fun onIdentity(identity: ItemIdentity?, atMs: Long): Advance {
+        if (identity == null || identity.isEmpty) return Advance.UNREADABLE   // keep what we know
+
+        val last = lastIdentity
+        if (last != null && !last.differsFrom(identity)) {
+            // Same item as far as we can prove. Absorb anything this frame knew that the stored
+            // identity did not — a title that rendered late is the case that matters, and without
+            // this the stored identity stays handle-only and the next Short by the same creator
+            // is once again indistinguishable.
+            lastIdentity = last.mergedWith(identity)
+            return Advance.UNCHANGED
+        }
 
         // Floor. Deliberately checked AFTER the change test and WITHOUT storing, so the pending
         // new identity is retried on the next read rather than being swallowed.

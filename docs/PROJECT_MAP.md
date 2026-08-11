@@ -3,7 +3,7 @@
 > **Single entry point.** Living audit + index of every doc in the project. Pointers only — never a
 > dump of ROADMAP/DECISIONS.
 > Last audited: **2026-08-10** — **Phase 3b DONE (D62); Phase 3c (auth) is next.** Android state
-> unchanged from the 2026-08-04 audit below (Phase 2 · challenge suite **7/7 — D84**, 4 device-verified + 3 not · brand pass done D58 · **YT blocks via D73 override** · **ONE global daily limit (D76)** · **STRICT MODE — no free "5 more minutes" (D77)** · **✅ BLOCK SAGA CLOSED (D72)** · **Pass A (D78) + Pass B1 data (D80/D81) + Pass B2 Insights screen (D82) all SHIPPED** — nav is **Today / Insights / Settings**, Apps tab deleted · five-days set **COMPLETE — 1/2/3/4 shipped (D83/D84/D85/D86)** · bubble MOTION + real launcher mark + Insights glyph (D86) · guilt pack **217, T4 103/150** · **✅ 444 tests / 44 suites GREEN, run 2026-08-11 on the dev machine — `BubbleMotionTest` DID execute.** The long-standing "no SDK, D86 never run" caveat is retired: the SDK *is* on this machine, and the build needs `JAVA_HOME` pointed at **Temurin 21** — the Android Studio JBR is Java 25 now and the Gradle daemon rejects it.)
+> unchanged from the 2026-08-04 audit below (Phase 2 · challenge suite **7/7 — D84**, 4 device-verified + 3 not · brand pass done D58 · **YT blocks via D73 override** · **ONE global daily limit (D76)** · **STRICT MODE — no free "5 more minutes" (D77)** · **✅ BLOCK SAGA CLOSED (D72)** · **Pass A (D78) + Pass B1 data (D80/D81) + Pass B2 Insights screen (D82) all SHIPPED** — nav is **Today / Insights / Settings**, Apps tab deleted · five-days set **COMPLETE — 1/2/3/4 shipped (D83/D84/D85/D86)** · bubble MOTION + real launcher mark + Insights glyph (D86) · guilt pack **217, T4 103/150** · **✅ 452 tests / 44 suites GREEN, run 2026-08-11 on the dev machine — `BubbleMotionTest` DID execute.** The long-standing "no SDK, D86 never run" caveat is retired: the SDK *is* on this machine, and the build needs `JAVA_HOME` pointed at **Temurin 21** — the Android Studio JBR is Java 25 now and the Gradle daemon rejects it.)
 >
 > **Device session 2026-08-03 (upgrade path on A015):** built OLD APK from `03cebae` (DB v3, no
 > welcome) in a worktree + NEW from current tree; unit suite green before install. **Run M (D80)
@@ -54,6 +54,18 @@
 > this project's own Windows dev machine at all** — `zoneinfo` needs a system tz database Windows
 > does not have, and nobody had ever run the backend gates outside Linux CI. **167 backend tests, all
 > four gates green, 100% coverage.** Zero Android files touched. **Next: 3c (auth).**
+>
+> **2026-08-11 — ⚑ YOUTUBE UNDERCOUNT FIXED (D90), reported from real use.** The per-Short identity
+> was the **channel handle alone**, so two Shorts in a row by one creator compared equal and the
+> second never counted; inside a creator's own Shorts tab an entire session counted **1**. D34's
+> capture had recorded the title alongside the handle — the extraction was discarding it whenever a
+> handle existed, which is nearly always. Identity is now a **pair** (`ItemIdentity`), compared
+> field-wise with **absent ≠ different** (a naive concat would double-count every Short, since
+> YouTube renders handle and title a frame apart). The acceptance tests never caught it because
+> `15 swipes count 15` uses fifteen *different* handles and the idle test is indistinguishable from
+> the bug. **7 new tests; 452 / 44 green.** ⚑ Title ids are still device-unverified, so confirm with
+> `YtProbe`'s `identity=handle=… title=…` line; YT stays BETA. **Snapchat Spotlight is NOT this bug**
+> — it is the deliberate SHADOW state and is blocked on a device tour, not on code.
 >
 > **Five-days-of-real-use set.** Piece 1 **D83** shipped (guilt display 6.5s; escalation +10 / ×2 /
 > cap 4× / half-charge on others). Piece 2 **D84** shipped (suite 4→7). Piece 4 **D85** shipped
@@ -138,7 +150,7 @@ for that area; the others are the history that led to it and are usually *not* w
 
 | Topic | ADRs | Current position in one line |
 |---|---|---|
-| Detection / advance signal | D11, D15, **D34** | IG = `DELTA_Y_FORWARD` (calibrated 49/50); YT = `IDENTITY_CHANGE` on channel handle |
+| Detection / advance signal | D11, D15, D34, **D90** | IG = `DELTA_Y_FORWARD` (calibrated 49/50); YT = `IDENTITY_CHANGE` on **handle AND title as a pair** — ⚑ **D90 fixed a real undercount: the identity used to be the channel alone, so consecutive Shorts by one creator were invisible and a session inside one channel counted 1.** Absent field ≠ different field, or a late-rendering title double-counts every Short |
 | Surface gating (Reels vs feed) | D24, D26, D27, D28 | `GatingMode`; IG `clips_viewer`, YT `reel_recycler`, both **ENFORCED** |
 | Platform maturity / eligibility | D32, D57, **D73** | `Maturity` BETA never blocks — *except* YT via the explicit `blocksWhileUncalibrated` override |
 | Daily limit | D19, D49, **D76**, D88 | ONE global limit across every blocking app. *What* counts is global (`BlockPolicy.blockingTotal`); *where* it may draw stays per-platform. ⚑ **D88 moved the REPRIEVE global to match** — budget and the thing you spend to escape it must share a currency |
@@ -217,6 +229,7 @@ mindmap
       Premium springs indoors D87
       Reprieve went global D88
       Backend data layer D62
+      YT identity is a pair D90
     Android packages
       service detection overlay block
       data Room CountRepository
