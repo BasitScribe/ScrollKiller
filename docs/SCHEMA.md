@@ -1,7 +1,12 @@
 # Schema (server, Postgres)
 
+⚑ **This block is executable.** `backend/tests/test_schema_parity.py` parses the six declarations
+below and compares them against `app/models/` in BOTH directions — a column here that is not mapped,
+or mapped and not here, fails the build. So it cannot quietly stop describing the code, and it is
+not a subset: adding a column means editing this file in the same commit. Built in 3b (D62).
+
 users(id PK, google_sub UNIQUE, email, display_name, avatar_url, timezone TEXT, created_at)
-sessions(id PK, user_id FK, refresh_token_hash, expires_at, revoked_at NULL)
+sessions(id PK, user_id FK, refresh_token_hash, expires_at, revoked_at NULL, created_at)
 devices(id PK, user_id FK, fcm_token, platform, last_seen)
 daily_counts(user_id FK, date DATE, platform ENUM[instagram,youtube,snapchat,facebook,tiktok], count INT, PK(user_id,date,platform))
 friendships(user_id FK, friend_id FK, status ENUM[pending,accepted,blocked], created_at, PK(user_id,friend_id))

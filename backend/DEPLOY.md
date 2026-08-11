@@ -60,14 +60,29 @@ and is the only env file that is tracked (D60).
 
 ### ⚑ Two database URLs, and mixing them up is a real outage
 
-The app runs on the **pooled** URL with **prepared statements disabled**
-(`statement_cache_size=0` for asyncpg). pgbouncer in transaction mode does not keep a session
-pinned, so a prepared statement created on one backend is unavailable on the next and you get
+The app runs on the **pooled** URL. pgbouncer in transaction mode does not keep a session pinned, so
+a prepared statement created on one backend is unavailable on the next and you get
 `prepared statement "__asyncpg_stmt_1__" does not exist` under load — intermittently, which is the
-worst way to find out.
+worst way to find out. Since D62 that is handled in `app/db.py` by four settings, all of them
+asserted by `tests/test_db.py`:
 
-Alembic runs on the **direct** URL. Migrations take locks and issue DDL, and a transaction-pooled
-connection is the wrong place for both.
+| Setting | Without it |
+|---|---|
+| `statement_cache_size=0` | asyncpg replays a cached plan against a backend that never prepared it |
+| `prepared_statement_cache_size=0` | SQLAlchemy's own dialect cache does the same, one layer up |
+| `prepared_statement_name_func` (uuid) | two clients sharing a backend both ask for `__asyncpg_stmt_1__` |
+| `poolclass=NullPool` | prepared statements accumulate on pooled connections nothing will discard |
+
+`NullPool` reads like a pessimisation and is not: **pgbouncer IS the pool**, and it runs closer to
+the database than we do. It also answers Neon's autosuspend for free — there is no idle connection
+left to go stale.
+
+Alembic runs on the **direct** URL, and `migrations/env.py` **refuses to run without
+`DATABASE_URL_DIRECT`** rather than falling back. Alembic's version lock is *connection-scoped*, and
+under a transaction pooler "the connection" is whatever backend the pooler hands out per
+transaction — so the lock can be taken on one backend and released against another, and the mutual
+exclusion protecting two concurrent deploys silently is not there. It works on a small schema, in
+testing, most of the time.
 
 ---
 
@@ -87,18 +102,20 @@ connection is the wrong place for both.
 
 ## Before the first real deploy — blockers
 
-- [ ] **3b**: models + Alembic. `app/models/` is still an empty package.
-      ✅ Already done: `app/platforms.py` (wire enum, pinned to the Kotlin client by a test) and
-      `app/timezones.py` (IANA validation + `local_date_for`, which is invariant 2).
-- [ ] **Regenerate the lockfile** — `sqlalchemy[asyncio]`, `asyncpg`, `alembic` are not in it:
-      `pip install pip-tools && pip-compile --generate-hashes --output-file=requirements.txt requirements.in`
+- [x] ✅ **3b: models + Alembic — DONE (D62).** All six `SCHEMA.md` tables, the `platform` Postgres
+      ENUM built from the wire contract, revision `0001` on the direct URL, and `/readyz` doing a
+      real `SELECT 1`. `app/platforms.py` and `app/timezones.py` were already in from the earlier
+      half. The lockfile is regenerated and hash-pinned.
 - [ ] **3c**: auth. Nothing can be per-user until there is a user.
 - [ ] **3d**: `/sync` + `/me/today`.
 - [ ] ✅ **`tzdata` is in the Dockerfile.** Do not remove it — the slim base strips the timezone
       database, and `assert_tzdata_available()` refuses to boot without it *by design*, because the
       alternative is a container that starts healthy and silently misdates every count (D87/D89).
-- [ ] **Add a Postgres service to `backend.yml`** if the model tests need a live database. There is
-      none today, which is why 3b's first two modules were deliberately built dependency-free.
+- [ ] **Add a Postgres service to `backend.yml`** when something needs a live database. 3b did not:
+      the schema is checked by rendering `alembic upgrade head --sql` offline and comparing it to
+      the mapped metadata, which needs no server and is also the artifact a reviewer should read.
+      That stops being enough at 3d, where `ON CONFLICT` behaviour under concurrency is the thing
+      being tested and no rendering of it proves anything.
 - [ ] **Decide the deploy trigger.** Recommended: manual, or on a tag — not on every push to `main`.
       CI is a gate; a deploy is a decision.
 

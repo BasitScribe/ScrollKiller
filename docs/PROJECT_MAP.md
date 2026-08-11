@@ -2,7 +2,8 @@
 
 > **Single entry point.** Living audit + index of every doc in the project. Pointers only — never a
 > dump of ROADMAP/DECISIONS.
-> Last audited: **2026-08-04** (Phase 2 · challenge suite **7/7 — D84**, 4 device-verified + 3 not · brand pass done D58 · **YT blocks via D73 override** · **ONE global daily limit (D76)** · **STRICT MODE — no free "5 more minutes" (D77)** · **✅ BLOCK SAGA CLOSED (D72)** · **Pass A (D78) + Pass B1 data (D80/D81) + Pass B2 Insights screen (D82) all SHIPPED** — nav is **Today / Insights / Settings**, Apps tab deleted · five-days set **COMPLETE — 1/2/3/4 shipped (D83/D84/D85/D86)** · bubble MOTION + real launcher mark + Insights glyph (D86) · guilt pack **217, T4 103/150** · **407 tests / 41 suites green as of D85; D86 adds `BubbleMotionTest` and has NOT been run — no SDK off the dev machine**.)
+> Last audited: **2026-08-10** — **Phase 3b DONE (D62); Phase 3c (auth) is next.** Android state
+> unchanged from the 2026-08-04 audit below (Phase 2 · challenge suite **7/7 — D84**, 4 device-verified + 3 not · brand pass done D58 · **YT blocks via D73 override** · **ONE global daily limit (D76)** · **STRICT MODE — no free "5 more minutes" (D77)** · **✅ BLOCK SAGA CLOSED (D72)** · **Pass A (D78) + Pass B1 data (D80/D81) + Pass B2 Insights screen (D82) all SHIPPED** — nav is **Today / Insights / Settings**, Apps tab deleted · five-days set **COMPLETE — 1/2/3/4 shipped (D83/D84/D85/D86)** · bubble MOTION + real launcher mark + Insights glyph (D86) · guilt pack **217, T4 103/150** · **407 tests / 41 suites green as of D85; D86 adds `BubbleMotionTest` and has NOT been run — no SDK off the dev machine**.)
 >
 > **Device session 2026-08-03 (upgrade path on A015):** built OLD APK from `03cebae` (DB v3, no
 > welcome) in a worktree + NEW from current tree; unit suite green before install. **Run M (D80)
@@ -38,6 +39,21 @@
 > now answer it deliberately; the lever is **`GLOBAL_DIVISOR`**, not `CAP_MULTIPLE`. The holds are
 > unaffected — `DOUBLE` at `CAP_MULTIPLE = 4` has only three rungs by construction. The unit suite
 > was **not** run off-device (no SDK), so 407/41 remains the last known state.
+>
+> **2026-08-10 — PHASE 3b IS DONE (D62), and Phase 3 is now half built.** The blocker that stopped
+> it on 2026-08-04 was environmental — PyPI was reachable this time, so the lockfile regenerated and
+> the ORM half landed: all six `SCHEMA.md` tables, the `platform` Postgres ENUM built from the wire
+> contract, `app/db.py` on the **pooled** URL, Alembic revision `0001` on the **direct** URL, and a
+> `/readyz` that issues a real `SELECT 1`. **The pooling settings were read out of the installed
+> dialect source, not recalled** — `NullPool` is a *warning* in SQLAlchemy's own pgbouncer guidance,
+> because **pgbouncer IS the pool**. `migrations/env.py` REFUSES to run without `DATABASE_URL_DIRECT`
+> rather than falling back, since Alembic's version lock is connection-scoped and a transaction
+> pooler does not preserve it. **`docs/SCHEMA.md` is now parsed by a test** and compared to the
+> models in both directions. ⚑ Two silent traps found by running it: Alembic re-applies the naming
+> convention to names you pass it (`op.f()` everywhere now), and **the backend suite could not run on
+> this project's own Windows dev machine at all** — `zoneinfo` needs a system tz database Windows
+> does not have, and nobody had ever run the backend gates outside Linux CI. **167 backend tests, all
+> four gates green, 100% coverage.** Zero Android files touched. **Next: 3c (auth).**
 >
 > **Five-days-of-real-use set.** Piece 1 **D83** shipped (guilt display 6.5s; escalation +10 / ×2 /
 > cap 4× / half-charge on others). Piece 2 **D84** shipped (suite 4→7). Piece 4 **D85** shipped
@@ -85,9 +101,9 @@ for f in CLAUDE.md HANDOFF.md docs/*.md ScrollKiller/*.md; do echo "$(grep -c '^
 | [../CLAUDE.md](../CLAUDE.md) | Invariants (the 6 non-negotiables), stack, conventions, session protocol | **Always, first.** It is short and it overrides everything |
 | **this file** | Project audit, phase status, package map, per-area summaries | **Always, second.** Orient here before opening anything else |
 | [ROADMAP.md](ROADMAP.md) | Phases, checkboxes, and an append-only session log | You need the CURRENT phase's open items. **Read the `← CURRENT` section only** — the status log is long and historical |
-| [DECISIONS.md](DECISIONS.md) | ADRs **D1…D87** (~262 KB), append-only, with a complete **83-line title index** at the top (83 = D1–D87 minus D61–D64, reserved) | You need *why* something is the way it is. **Never open this file whole — it is the single biggest token sink in the repo.** Use the topic table below to get candidate `Dn`s, then read only those. D55+ titles are greppable via `^\*\*D` |
+| [DECISIONS.md](DECISIONS.md) | ADRs **D1…D89** (~270 KB), append-only, with a title index at the top. **D61, D63 and D64 remain reserved-and-unwritten**; D62 was written on 2026-08-10 once 3b could verify its claims against the real dialect instead of guessing | You need *why* something is the way it is. **Never open this file whole — it is the single biggest token sink in the repo.** Use the topic table below to get candidate `Dn`s, then read only those. D55+ titles are greppable via `^\*\*D` |
 | [../HANDOFF.md](../HANDOFF.md) | Manual on-device checklists, newest first | You are writing or running device verification. Only the `← CURRENT` block is live |
-| [SCHEMA.md](SCHEMA.md) | Server tables + sync flow (**near-live ~2s since D89**) | Phase 3+ backend work. Nothing in the app reads this yet |
+| [SCHEMA.md](SCHEMA.md) | Server tables + sync flow (**near-live ~2s since D89**) | Phase 3+ backend work. ⚑ **Its table block is EXECUTABLE since D62** — `backend/tests/test_schema_parity.py` compares it to `app/models/` both ways, so adding a column means editing this file in the same commit |
 | [../backend/DEPLOY.md](../backend/DEPLOY.md) | Hosting choices, the two Neon URLs, spin-down behaviour, first-deploy order, blockers | Before touching deployment, and before anyone wonders why there are two database URLs |
 | [STORE_COPY.md](STORE_COPY.md) | Claims the Play listing may **not** make | Before writing any user-facing marketing copy, or pre-submission |
 | [architecture.mermaid](architecture.mermaid) | Whole-system component flowchart | You need the shape of the system rather than one area |
@@ -138,12 +154,16 @@ for that area; the others are the history that led to it and are usually *not* w
 | Visual identity / UI polish | D58, D78, D86, **D87** | Palette sampled from the mascot, one source for both render paths. D78 adds the quiet neutral tier (`ON_LIGHT_MUTED`/`ON_LIGHT_FAINT`) for dividers, gridlines and empty states |
 | Data model / retention | D4, D14, **D65**, **D80** | Aggregates forever, raw pruned 7d; displayed = server-acked + local unacked. Time is rolled up daily into `daily_minutes` BEFORE the prune — compute while the evidence exists, keep only the answer |
 | Stats / streaks | **D81**, D80 | ⚑ Streaks are **provisional** on D14's interim day boundary and can shift in Phase 3 — derive them, never cache them as achievements |
-| Backend / CI / infra | D6, D59, **D60**, D66, D67, D68, D69, D79, **D89** | Monorepo, path-filtered CI; security baseline before endpoint 1; Redis/FCM are Phase 4. Daemon JVM pinned by VERSION only — a bare vendor pin cannot start on CI, and foojay does not cover the daemon path. **D89: sync is ~2s near-live, not 60s batched, and `backend/DEPLOY.md` is the deploy checklist** |
+| Backend / CI / infra | D6, D59, **D60**, D66, D67, D68, D69, D79, D89 | Monorepo, path-filtered CI; security baseline before endpoint 1; Redis/FCM are Phase 4. Daemon JVM pinned by VERSION only — a bare vendor pin cannot start on CI, and foojay does not cover the daemon path. **D89: sync is ~2s near-live, not 60s batched, and `backend/DEPLOY.md` is the deploy checklist** |
+| Backend data layer / migrations | **D62**, D60, D66 | Two URLs that are NOT interchangeable: app on **pooled** (`NullPool` + both prepared-statement caches off — pgbouncer IS the pool), Alembic on **direct** and it REFUSES to fall back. Platform ENUM stores wire values via `values_callable`. `docs/SCHEMA.md` is parsed by a test, both directions |
 | Docs & vault conventions | **D56** | Index-first; markdown links in `docs/`, wikilinks in the vault |
 
 *(D61–D64 are reserved placeholders, deliberately unwritten — see D60's closing note.)*
 
-**Index is complete through D87** — 83 entries = D1–D87 minus the four reserved.
+**Index is complete through D89**, with **D61, D63 and D64 still deliberately unwritten** (cold
+starts, refresh-token rotation, server-side day boundary — each gets written by the sub-phase that
+verifies it, per D60's closing note). **D62 is now written**, because 3b measured pgbouncer's
+behaviour against the installed dialect rather than recalling it.
 
 ---
 
@@ -179,8 +199,8 @@ mindmap
       P1 Detection MVP done
       P2 Block Challenges CURRENT
       P3a CI skeleton done
-      P3b part done platforms and timezones
-      P3b models still missing
+      P3b data layer DONE D62
+      P3c auth NEXT
       P4 Social
       P5 Ship iOS skeleton
     Shipped lately
@@ -196,6 +216,7 @@ mindmap
       Guilt 217 T4 at 103 D86
       Premium springs indoors D87
       Reprieve went global D88
+      Backend data layer D62
     Android packages
       service detection overlay block
       data Room CountRepository
@@ -225,6 +246,8 @@ mindmap
       Day boundary backend app timezones
       Sync cadence SCHEMA and D89
       Deploy checklist backend DEPLOY
+      Pooled engine backend app db
+      Direct url only migrations env
     Device debt
       Finish Run M rollup clear
       Run P escalation ladder
@@ -268,7 +291,7 @@ mindmap
   - Challenges: `shake_30` / `flip_10` / `balance_20` still need **Run Q** on hardware. Fake-scroll feed not started
   - **YT BLOCKS (D73)** but **still not calibrated** — 15±2 swipe / 30s idle runs remain; they matter more now because an uncalibrated count covers a screen
   - Device debt from this afternoon: finish **Run M (D80)** rollup+clear · **Run P** ladder · **Run Q** · **Run R (D85)** · **Run O** Insights UI · older E/F/I/J as capacity allows
-- **Phase 3** — **3a SHIPPED**; **3b PART-DONE (2026-08-04)** — the two stdlib halves are in and green (`app/platforms.py` + a parity test that PARSES `PlatformSpec.kt`, and `app/timezones.py` whose `local_date_for` IS invariant 2), ORM half blocked on a `pip-compile` that needs network. ⚑ The working brief's "3b is done" was FALSE — `app/models/` is empty. Sub-phases: **3a** ✅ → **3b** models + migrations → **3c** auth → **3d** sync + `/me/today` → **3e** client queue. **3a–3d touch zero `app/` files.**
+- **Phase 3** — **3a ✅ SHIPPED · 3b ✅ SHIPPED (2026-08-10, D62)**: wire enum + day boundary (the earlier stdlib half), then models, the platform ENUM, `app/db.py`, Alembic `0001` and a real `/readyz`. 167 backend tests, four gates green, 100% coverage. Sub-phases: **3a** ✅ → **3b** ✅ → **3c** auth ← **NEXT** → **3d** sync + `/me/today` → **3e** client queue. **3a–3d touch zero `app/src/` files**, which is what keeps the shipped offline app unable to regress while the backend is built.
   - `backend/` FastAPI skeleton; health never hits DB (D60). Daemon JVM pin is **version-only** (D79 correcting D67). Local note: AS JBR is now Java 25 — install **Temurin 21** for Gradle sync (daemon wants 21; no `toolchainUrl` entries).
 - **Phase 4–5** Social, Play ship — not started
 
@@ -500,12 +523,25 @@ state, not a bug; the test says so and names what to do when the next strategy i
 
 ---
 
-### Backend (`backend/`, skeleton + 3b partial) → SCHEMA.md
+### Backend (`backend/`, **3a + 3b DONE**) → SCHEMA.md, DEPLOY.md
 - Auth Google → JWT; POST `/sync` deltas; GET `/me/today` — **none built yet (3c/3d)**
 - ✅ `app/platforms.py` — the wire enum, pinned to the client by a test that reads `PlatformSpec.kt`
 - ✅ `app/timezones.py` — IANA validation + `local_date_for` (**invariant 2**); `assert_tzdata_available()` runs at app construction
-- ⏳ `app/models/` still EMPTY — models, the Postgres ENUM, Alembic and a real `/readyz` are the rest of 3b
-- Postgres: users, sessions, devices, daily_counts, friendships, sync_batches
+- ✅ `app/models/` — all six tables (users, sessions, devices, daily_counts, friendships, sync_batches).
+  `devices`/`friendships` created **unused**, which is D66's line: schema may lead its consumer, services may not
+- ⚑ **`values_callable` on the platform ENUM is the load-bearing line.** Without it Postgres stores
+  `INSTAGRAM` while the client, the wire enum and the parity test all say `instagram` — and **nothing raises**
+- ⚑ **`devices.platform` is an OS (`android`/`ios`), NOT `Platform`.** SCHEMA.md names both columns
+  `platform`; a test asserts the two value sets are disjoint
+- ✅ `app/db.py` — the **pooled** URL only. Four pgbouncer settings, all tested: both prepared-statement
+  caches off, uuid statement names, `NullPool` (**pgbouncer IS the pool** — SQLAlchemy's own docs make
+  that a warning, and it removes Neon's stale-idle-connection problem for free)
+- ✅ Alembic `0001` on the **direct** URL. `migrations/env.py` **raises rather than falling back** —
+  the version lock is connection-scoped and a transaction pooler does not preserve it
+- ✅ `/readyz` does a real `SELECT 1` behind a 5s timeout; unconfigured ≠ unreachable ≠ ready
+- ⚑ **`docs/SCHEMA.md` is executable** — parsed and compared against the models **in both directions**
+- ⚑ **`tzdata` is a DEV dependency now.** Windows has no system tz database, so the suite could not run
+  on this project's own machine at all; the image still gets its copy from the Dockerfile's apt package
 - Redis ZSET leaderboards; FCM taunts — Phase 4
 
 ---
