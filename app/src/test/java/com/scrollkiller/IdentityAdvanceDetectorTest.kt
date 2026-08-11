@@ -206,6 +206,91 @@ class IdentityAdvanceDetectorTest {
         assertEquals(Advance.UNREADABLE, detector().onIdentity(ItemIdentity(), 0L))
     }
 
+    // --- the scroll pulse: an advance signal that reads nothing (D90) -----------------------
+    //
+    // The identity can only see an advance it can DESCRIBE. When the tree yields no title and the
+    // next Short shares a creator, the item really changed and no text can prove it. A scroll can:
+    // it happens because a finger moved the recycler, and idling does not produce one.
+
+    @Test
+    fun `a scroll counts even when the identity cannot tell the Shorts apart`() {
+        // The reported bug, defeated WITHOUT depending on the unverified title ids.
+        val detector = detector()
+        var counted = 0
+        repeat(15) { i ->
+            val at = i * 2_000L
+            if (detector.onScrollPulse(at) == Advance.COUNTED) counted++
+            // Same creator, no title available — the identity path is blind here, and must not
+            // count a second time either.
+            detector.onIdentity(handle("@OneChannel"), at + 100L)
+        }
+        assertEquals(15, counted)
+    }
+
+    @Test
+    fun `a scroll and the identity change it causes are ONE advance, not two`() {
+        val detector = detector()
+        assertEquals(Advance.COUNTED, detector.onScrollPulse(0L))
+        assertEquals(
+            "the two signals agreeing must not double the Short",
+            Advance.ABSORBED,
+            detector.onIdentity(short("@a", "first"), 120L),
+        )
+    }
+
+    @Test
+    fun `a slow-rendering identity is still absorbed, not counted`() {
+        // Why the absorb is explicit rather than left to the floor: a title that renders late
+        // would eventually outlive a timing-based dedup and double the Short.
+        val detector = detector()
+        detector.onScrollPulse(0L)
+        assertEquals(Advance.ABSORBED, detector.onIdentity(short("@a", "first"), 499L))
+    }
+
+    @Test
+    fun `an absorb does not stay armed forever`() {
+        // A pulse whose identity change never arrives must not swallow an unrelated advance
+        // minutes later. The arming window is the same floor.
+        val detector = detector()
+        detector.onScrollPulse(0L)
+        assertEquals(Advance.COUNTED, detector.onIdentity(short("@a", "much later"), 60_000L))
+    }
+
+    @Test
+    fun `a fling burst is one advance`() {
+        // A single fling emits a burst of scroll events. They collapse through the same floor
+        // that already existed, so no second debounce is needed.
+        val detector = detector()
+        assertEquals(Advance.COUNTED, detector.onScrollPulse(0L))
+        assertEquals(Advance.FLOORED, detector.onScrollPulse(40L))
+        assertEquals(Advance.FLOORED, detector.onScrollPulse(90L))
+        assertEquals(Advance.FLOORED, detector.onScrollPulse(180L))
+    }
+
+    @Test
+    fun `idling still counts ZERO, because idling emits no scroll`() {
+        // ⚑ The property the entire design exists to protect, re-asserted against the new signal.
+        // The pulse is only safe BECAUSE playback does not produce one — if this ever fails, the
+        // pulse must go, not the assertion.
+        val detector = detector()
+        var counted = 0
+        repeat(40) { i ->
+            if (detector.onIdentity(short("@a", "one video"), i * 750L) == Advance.COUNTED) {
+                counted++
+            }
+        }
+        assertEquals("the landing Short, and nothing else", 1, counted)
+    }
+
+    @Test
+    fun `reset clears a pending absorb`() {
+        // Leaving the app mid-pulse must not make the Short you come back to invisible.
+        val detector = detector()
+        detector.onScrollPulse(0L)
+        detector.reset()
+        assertEquals(Advance.COUNTED, detector.onIdentity(short("@a", "landed"), 100L))
+    }
+
     @Test
     fun `reset clears the floor too, so a fast re-entry is not swallowed`() {
         val detector = detector()

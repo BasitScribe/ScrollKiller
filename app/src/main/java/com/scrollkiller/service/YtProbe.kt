@@ -95,6 +95,14 @@ internal object YtProbe {
         /** IDENTITY_CHANGE: identity changed but landed inside the [PlatformSpec.minAdvanceIntervalMs] floor. */
         IDENTITY_FLOORED("identity-floored"),
 
+        /**
+         * IDENTITY_CHANGE: the identity changed and the SCROLL PULSE had already counted it
+         * (D90). Not a rejection — it is the two independent signals agreeing, and during an
+         * acceptance run it is the healthy line to see after every swipe. Reading it as a drop
+         * would make a correctly-working detector look like it was losing half its advances.
+         */
+        IDENTITY_ABSORBED("identity-absorbed"),
+
         /** Event type that drives no counting for this platform (SCROLLED on YT / WINDOW_STATE). */
         PROBE_ONLY("probe-only-no-counting-path"),
     }

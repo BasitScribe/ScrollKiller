@@ -314,6 +314,7 @@ class ReelScrollAccessibilityService : AccessibilityService() {
         IdentityAdvanceDetector.Advance.UNREADABLE -> YtProbe.Branch.IDENTITY_UNREADABLE
         IdentityAdvanceDetector.Advance.UNCHANGED -> YtProbe.Branch.IDENTITY_UNCHANGED
         IdentityAdvanceDetector.Advance.FLOORED -> YtProbe.Branch.IDENTITY_FLOORED
+        IdentityAdvanceDetector.Advance.ABSORBED -> YtProbe.Branch.IDENTITY_ABSORBED
     }
 
     private fun reasonFor(advance: IdentityAdvanceDetector.Advance): String = when (advance) {
@@ -321,6 +322,8 @@ class ReelScrollAccessibilityService : AccessibilityService() {
         IdentityAdvanceDetector.Advance.UNREADABLE -> "no @handle and no identityTitleHints node — ignored"
         IdentityAdvanceDetector.Advance.UNCHANGED -> "same identity as last counted (item re-rendering)"
         IdentityAdvanceDetector.Advance.FLOORED -> "identity changed inside minAdvanceIntervalMs — retried next read"
+        IdentityAdvanceDetector.Advance.ABSORBED ->
+            "identity changed and the scroll pulse already counted it — the two signals agreeing"
     }
 
     /**
@@ -382,6 +385,34 @@ class ReelScrollAccessibilityService : AccessibilityService() {
             if (!countable) {
                 branch = YtProbe.Branch.REJECTED_SURFACE
                 reason = "ENFORCED off-surface (marker unmatched)"
+            } else if (spec.usesIdentityAdvance) {
+                // ⚑ THE SCROLL ITSELF IS AN ADVANCE HERE (D90).
+                //
+                // `SwipeDetector` can never fire on this surface — D34 found `scrollDeltaY = 0`
+                // on every Shorts scroll, so there is no forward DIRECTION to detect. But "no
+                // direction" is not "no event": this event exists because a finger moved the
+                // recycler, and idle playback does not produce one. That is a genuine advance
+                // signal, and unlike the identity it needs to read nothing at all — which is what
+                // makes it work when the next Short shares a creator and the text cannot tell.
+                //
+                // The fling's burst collapses through the detector's own floor, and the identity
+                // change this scroll is about to cause is ABSORBED rather than counted again.
+                val identity = identityDetectors.getOrPut(spec.platform) {
+                    IdentityAdvanceDetector(spec.minAdvanceIntervalMs)
+                }
+                if (identity.onScrollPulse(now) == IdentityAdvanceDetector.Advance.COUNTED) {
+                    repository.record(
+                        spec,
+                        now,
+                        sourcePackage = event.packageName?.toString() ?: spec.packageName,
+                    )
+                    counted = true
+                    branch = YtProbe.Branch.COUNTED
+                    reason = "counted (scroll pulse)"
+                } else {
+                    branch = YtProbe.Branch.DEBOUNCED_QUIET_GAP
+                    reason = "pulse inside the advance floor"
+                }
             } else {
                 val detector = detectors.getOrPut(spec.platform) { SwipeDetector(spec.minAdvanceIntervalMs) }
                 // Debounce the fling burst into a single forward advance.

@@ -63,6 +63,17 @@ class IdentityAdvanceDetector(private val minAdvanceIntervalMs: Long) {
 
         /** Identity changed, but inside [minAdvanceIntervalMs] of the last count. */
         FLOORED,
+
+        /**
+         * Identity changed, and [onScrollPulse] had already counted the scroll that caused it.
+         * The new item is adopted; nothing is recorded.
+         *
+         * Distinct from [UNCHANGED] and [FLOORED] because it means something different during an
+         * acceptance run: this is the two signals agreeing, which is the healthy case. Reading it
+         * as a rejection would make a correctly-working detector look like it was dropping half
+         * its advances.
+         */
+        ABSORBED,
     }
 
     /**
@@ -75,6 +86,15 @@ class IdentityAdvanceDetector(private val minAdvanceIntervalMs: Long) {
     private var lastCountAtMs = UNSET
 
     /**
+     * Until when an identity CHANGE should be absorbed silently because [onScrollPulse] already
+     * counted the advance that produced it. UNSET when no pulse is outstanding.
+     *
+     * Time-bounded rather than a plain flag, so a pulse whose identity change never arrives
+     * cannot sit armed indefinitely and swallow an unrelated advance minutes later.
+     */
+    private var absorbChangeUntilMs = UNSET
+
+    /**
      * Feed one identity read.
      *
      * The first non-null identity of a session always counts — that is the item the user
@@ -85,6 +105,41 @@ class IdentityAdvanceDetector(private val minAdvanceIntervalMs: Long) {
      * @param identity the item's identity, or null when this frame yielded nothing usable.
      * @param atMs event time in millis (monotonic within a session is enough).
      */
+    /**
+     * The user physically scrolled the item surface. Counts an advance.
+     *
+     * ## Why this exists, and why it does not depend on reading anything
+     * The identity path can only see an advance it can DESCRIBE. If the tree yields no title and
+     * the next item shares a creator, the item genuinely changed and nothing in the text can prove
+     * it. A scroll event can: it is emitted because a finger moved the recycler, and **idle
+     * playback does not produce one** — that asymmetry is the whole value, and it is what the
+     * identity check was protecting against in the first place.
+     *
+     * D34 established that `TYPE_VIEW_SCROLLED` fires on Shorts and reports `scrollDeltaY = 0`.
+     * That killed [SwipeDetector] there, because it needs a forward DIRECTION — but "no direction"
+     * is not "no event". The event's mere arrival on the gated surface is the signal; only its
+     * direction was ever missing, and identity platforms already count a backward swipe as an
+     * advance anyway (another Short consumed is another Short consumed).
+     *
+     * ⚑ **The accepted cost, stated plainly:** a partial drag that snaps back to the same item
+     * emits scroll events and will count. That is an OVERcount, the direction this project
+     * normally refuses — taken here deliberately, because the alternative it replaces is losing
+     * an entire session to a single-creator feed. It is bounded by [minAdvanceIntervalMs], and
+     * measuring it is exactly what the D34 acceptance run is for.
+     *
+     * A fling's burst of events collapses to one count through the same floor, so no separate
+     * debounce is needed.
+     */
+    fun onScrollPulse(atMs: Long): Advance {
+        if (lastCountAtMs != UNSET && atMs - lastCountAtMs < minAdvanceIntervalMs) {
+            return Advance.FLOORED
+        }
+        lastCountAtMs = atMs
+        // The identity change this scroll is about to produce must not count a second time.
+        absorbChangeUntilMs = atMs + minAdvanceIntervalMs
+        return Advance.COUNTED
+    }
+
     fun onIdentity(identity: ItemIdentity?, atMs: Long): Advance {
         if (identity == null || identity.isEmpty) return Advance.UNREADABLE   // keep what we know
 
@@ -96,6 +151,16 @@ class IdentityAdvanceDetector(private val minAdvanceIntervalMs: Long) {
             // is once again indistinguishable.
             lastIdentity = last.mergedWith(identity)
             return Advance.UNCHANGED
+        }
+
+        // A scroll just counted this advance. Adopt the new item WITHOUT counting it again —
+        // this is the dedup between the two signals, and it is explicit rather than left to the
+        // floor's timing, because a slow-rendering identity would eventually outlive the floor
+        // and double the Short.
+        if (absorbChangeUntilMs != UNSET && atMs <= absorbChangeUntilMs) {
+            absorbChangeUntilMs = UNSET
+            lastIdentity = identity
+            return Advance.ABSORBED
         }
 
         // Floor. Deliberately checked AFTER the change test and WITHOUT storing, so the pending
@@ -116,6 +181,7 @@ class IdentityAdvanceDetector(private val minAdvanceIntervalMs: Long) {
     fun reset() {
         lastIdentity = null
         lastCountAtMs = UNSET
+        absorbChangeUntilMs = UNSET
     }
 
     private companion object {
