@@ -248,9 +248,24 @@ class IdentityAdvanceDetectorTest {
     }
 
     @Test
+    fun `identity arriving AFTER the 500ms floor is still the same Short, not a second one`() {
+        // ⚑ D91: pulse used to arm absorb for the floor (500ms). YouTube often paints the
+        // handle/title AFTER that — 800ms is a normal late frame, not an idle. lastIdentity is
+        // still null (pulse reads nothing), so the late identity used to look like a brand-new
+        // Short and Room incremented twice per swipe. Absorb is now DEFAULT_ABSORB_MS (2s).
+        val detector = detector()
+        assertEquals(Advance.COUNTED, detector.onScrollPulse(0L))
+        assertEquals(
+            "a title that shows up at 800ms is still the Short the pulse just counted",
+            Advance.ABSORBED,
+            detector.onIdentity(short("@a", "first"), 800L),
+        )
+    }
+
+    @Test
     fun `an absorb does not stay armed forever`() {
         // A pulse whose identity change never arrives must not swallow an unrelated advance
-        // minutes later. The arming window is the same floor.
+        // minutes later. The arming window is DEFAULT_ABSORB_MS, not forever.
         val detector = detector()
         detector.onScrollPulse(0L)
         assertEquals(Advance.COUNTED, detector.onIdentity(short("@a", "much later"), 60_000L))

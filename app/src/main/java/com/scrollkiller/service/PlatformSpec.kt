@@ -32,10 +32,11 @@ enum class Platform(val id: String) {
  *   title) that changes exactly once per advance. Count on the identity CHANGING, never on
  *   the event — the same item re-renders dozens of times while it plays. YouTube Shorts
  *   (D34); see [ReelIdentity] + [IdentityAdvanceDetector].
- * - [EVENT_PULSE]: one advance per marker-matched event, time-debounced. Declared but
- *   UNUSED — it is outcome (A) of the D31 capture decision table, kept named so a future
- *   platform picks its strategy from a written menu rather than inventing one. Only safe
- *   for a surface proven to emit exactly one event per advance, which no platform is today.
+ * - [EVENT_PULSE]: one advance per container-scroll event, quiet-gap debounced, ignoring
+ *   direction. Use when the platform emits `TYPE_VIEW_SCROLLED` but `scrollDeltaY` is dead
+ *   (SAME), so [DELTA_Y_FORWARD] would count nothing, and there is no per-item identity
+ *   either. TikTok and Snapchat. Under [GatingMode.SHADOW] this still counts app-wide
+ *   container scrolls — the known tradeoff, not a new one.
  */
 enum class AdvanceStrategy { DELTA_Y_FORWARD, IDENTITY_CHANGE, EVENT_PULSE }
 
@@ -214,6 +215,15 @@ data class PlatformSpec(
      * again would double it). See D34.
      */
     val usesIdentityAdvance: Boolean get() = advanceStrategy == AdvanceStrategy.IDENTITY_CHANGE
+
+    /**
+     * True when a container scroll itself is the advance, even with `scrollDeltaY = 0`.
+     * [IDENTITY_CHANGE] uses [IdentityAdvanceDetector.onScrollPulse]; [EVENT_PULSE] uses
+     * [SwipeDetector.onPulse]. Instagram is neither — it has a real forward delta.
+     */
+    val usesScrollPulse: Boolean
+        get() = advanceStrategy == AdvanceStrategy.IDENTITY_CHANGE ||
+            advanceStrategy == AdvanceStrategy.EVENT_PULSE
 
     /**
      * May this platform's count actually trigger the full-screen block? This — NOT the raw
@@ -404,7 +414,13 @@ object PlatformRegistry {
         iconRes = R.drawable.ic_platform_tiktok,
         // BETA (D32): never toured, SHADOW counts app-wide. Mostly-FYP so it's roughly right,
         // but "roughly right" is not a number we lock a screen on.
+        //
+        // EVENT_PULSE (D91): TikTok's vertical pager commonly reports scrollDeltaY=0, the same
+        // dead direction that made YouTube count nothing under DELTA_Y_FORWARD. Count the
+        // container scroll itself, quiet-gap debounced. SHADOW still means Chat-equivalent
+        // surfaces can count — that is the existing tradeoff, not a new one.
         maturity = Maturity.BETA,
+        advanceStrategy = AdvanceStrategy.EVENT_PULSE,
     )
 
     private val snapchat = PlatformSpec(
@@ -428,7 +444,12 @@ object PlatformRegistry {
         // BETA (D32): never toured, and unlike TikTok it's NOT mostly-Spotlight — SHADOW also
         // counts Chat/Stories/Map scrolls as "snaps", a known OVERcount. The worst possible
         // input to a limit, so it is barred from driving one.
+        //
+        // EVENT_PULSE (D91): Spotlight's pager is in the same deltaY=0 family as Shorts. Without
+        // this, the Snapchat row stayed at 0 unless a rare DOWN delta appeared. Overcount on
+        // Chat remains the SHADOW tradeoff; a zero that pretended to be a count was worse.
         maturity = Maturity.BETA,
+        advanceStrategy = AdvanceStrategy.EVENT_PULSE,
     )
 
     /** Platforms detected today. Instagram is calibrated; the rest are scaffolded (D24). */

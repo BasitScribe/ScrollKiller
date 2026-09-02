@@ -52,6 +52,14 @@ class SwipeDetector(private val minAdvanceIntervalMs: Long) {
         return isNewAdvance
     }
 
+    /**
+     * [AdvanceStrategy.EVENT_PULSE]: any container scroll is an advance, including
+     * [ScrollDirection.SAME]. Vertical pagers (TikTok, Snapchat Spotlight) often report
+     * `scrollDeltaY = 0`, which [onScroll] would drop. The quiet-gap still collapses a
+     * fling; only the direction check is skipped.
+     */
+    fun onPulse(atMs: Long): Boolean = onScroll(ScrollDirection.DOWN, atMs)
+
     private companion object {
         /** Sentinel meaning "no DOWN seen yet"; avoids Long overflow on the first diff. */
         const val UNSET = Long.MIN_VALUE

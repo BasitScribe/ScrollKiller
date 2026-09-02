@@ -30,7 +30,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -38,6 +40,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -56,6 +59,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -227,7 +231,14 @@ fun DashboardScreen(
             },
         ) { current ->
             when (current) {
-                DashboardTab.TODAY -> TodayTab(total, guiltLine, breakdown, health, padding)
+                DashboardTab.TODAY -> TodayTab(
+                    total = total,
+                    dailyLimit = dailyLimit,
+                    guiltLine = guiltLine,
+                    breakdown = breakdown,
+                    health = health,
+                    padding = padding,
+                )
                 DashboardTab.INSIGHTS -> {
                     val insights by insightsViewModel.state.collectAsState()
                     InsightsTab(
@@ -263,6 +274,7 @@ fun DashboardScreen(
 @Composable
 private fun TodayTab(
     total: Int,
+    dailyLimit: Int,
     guiltLine: String?,
     breakdown: List<PlatformCount>,
     health: PermissionHealth,
@@ -270,11 +282,15 @@ private fun TodayTab(
 ) {
     val brain = BrainState.forCount(total)
     val accent = Color(brain.accentArgb)
+    val towardLock = breakdown.filter { it.countsTowardLimit }.sumOf { it.count }
+    val lockFraction = if (dailyLimit <= 0) 0f else (towardLock.toFloat() / dailyLimit).coerceIn(0f, 1f)
+    val lockNames = breakdown.filter { it.countsTowardLimit }.joinToString(" · ") { it.displayName }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(padding)
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -332,6 +348,44 @@ private fun TodayTab(
                     color = accent,
                     textAlign = TextAlign.Center,
                 )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = stringResource(
+                        when (brain) {
+                            BrainState.HEALTHY -> R.string.brain_state_healthy
+                            BrainState.CRACKING -> R.string.brain_state_cracking
+                            BrainState.FRIED -> R.string.brain_state_fried
+                        },
+                    ),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = accent,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(16.dp))
+                LinearProgressIndicator(
+                    progress = { lockFraction },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(8.dp)
+                        .clip(RoundedCornerShape(4.dp)),
+                    color = accent,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = stringResource(R.string.today_limit_progress, towardLock, dailyLimit),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+                if (lockNames.isNotBlank()) {
+                    Text(
+                        text = stringResource(R.string.today_limit_covers, lockNames),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                    )
+                }
             }
         }
 
@@ -375,31 +429,34 @@ private fun TodayTab(
                 // which reads as something failing to load rather than as nothing having happened
                 // yet (D78). Nothing counted is this app's BEST outcome, so the copy explains
                 // what will fill it instead of apologising.
-                if (breakdown.isEmpty()) {
+                if (breakdown.all { it.count == 0 }) {
                     EmptyState(
                         title = stringResource(R.string.empty_today_title),
                         body = stringResource(R.string.empty_today_body),
                     )
                 }
+                val max = breakdown.maxOfOrNull { it.count }?.coerceAtLeast(1) ?: 1
                 breakdown.forEach { row ->
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(row.displayName, style = MaterialTheme.typography.bodyLarge)
-                            if (row.isBeta) BetaBadge()
-                        }
-                        Text(
-                            row.count.toString(),
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
+                    ScrollBar(
+                        label = row.displayName,
+                        count = row.count,
+                        unitNoun = row.unitNoun,
+                        isBeta = row.isBeta,
+                        fraction = row.count.toFloat() / max,
+                        iconRes = row.iconRes,
+                    )
+                }
+                if (breakdown.any { it.isBeta }) {
+                    Text(
+                        text = stringResource(R.string.today_beta_footnote),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         }
+
+        Spacer(Modifier.height(24.dp))
     }
 }
 
@@ -416,6 +473,7 @@ private fun ScrollBar(
     unitNoun: String,
     isBeta: Boolean,
     fraction: Float,
+    @DrawableRes iconRes: Int = 0,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(
@@ -424,6 +482,16 @@ private fun ScrollBar(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                if (iconRes != 0) {
+                    Icon(
+                        painter = painterResource(iconRes),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .padding(end = 8.dp)
+                            .size(18.dp),
+                    )
+                }
                 Text(label, style = MaterialTheme.typography.bodyLarge)
                 if (isBeta) BetaBadge()
             }

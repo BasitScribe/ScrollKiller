@@ -34,6 +34,9 @@ data class PlatformCount(
     val unitNoun: String,
     val count: Int,
     val isBeta: Boolean = false,
+    /** True when this row feeds the global daily lock (D76/D73). Beta ≠ excluded: YouTube is both. */
+    val countsTowardLimit: Boolean = false,
+    @androidx.annotation.DrawableRes val iconRes: Int = 0,
 )
 
 /**
@@ -77,6 +80,8 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
                         unitNoun = spec.unitNoun,
                         count = today.countFor(spec.platform),
                         isBeta = spec.isBeta,
+                        countsTowardLimit = spec.blocksAtLimit,
+                        iconRes = spec.iconRes,
                     )
                 }
                 .sortedWith(compareByDescending<PlatformCount> { it.count }.thenBy { it.displayName })

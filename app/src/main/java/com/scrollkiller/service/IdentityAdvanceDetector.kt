@@ -43,8 +43,16 @@ package com.scrollkiller.service
  *
  * @param minAdvanceIntervalMs floor between two COUNTED advances (see
  *   [PlatformSpec.minAdvanceIntervalMs], whose meaning follows the strategy).
+ * @param absorbWindowMs how long after a [onScrollPulse] the matching identity change is
+ *   treated as the SAME advance. This is deliberately WIDER than [minAdvanceIntervalMs]:
+ *   the floor collapses a fling burst (~100ms), but YouTube often paints the handle/title
+ *   500–1500ms after the scroll, and a 500ms absorb made that late paint look like a
+ *   second Short (the pulse left [lastIdentity] null, so the identity path counted again).
  */
-class IdentityAdvanceDetector(private val minAdvanceIntervalMs: Long) {
+class IdentityAdvanceDetector(
+    private val minAdvanceIntervalMs: Long,
+    private val absorbWindowMs: Long = DEFAULT_ABSORB_MS,
+) {
 
     /**
      * What one identity read meant. An enum rather than a Boolean so the DEBUG transcript can
@@ -136,7 +144,8 @@ class IdentityAdvanceDetector(private val minAdvanceIntervalMs: Long) {
         }
         lastCountAtMs = atMs
         // The identity change this scroll is about to produce must not count a second time.
-        absorbChangeUntilMs = atMs + minAdvanceIntervalMs
+        // Wider than the floor: see [DEFAULT_ABSORB_MS].
+        absorbChangeUntilMs = atMs + absorbWindowMs
         return Advance.COUNTED
     }
 
@@ -184,8 +193,16 @@ class IdentityAdvanceDetector(private val minAdvanceIntervalMs: Long) {
         absorbChangeUntilMs = UNSET
     }
 
-    private companion object {
+    companion object {
         /** Sentinel meaning "nothing counted yet"; avoids Long overflow on the first diff. */
         const val UNSET = Long.MIN_VALUE
+
+        /**
+         * Absorb window after a scroll pulse. Kept independent of [minAdvanceIntervalMs]
+         * because they answer different questions: the floor is "do not count two swipes
+         * inside a fling", this is "the identity of the Short you just counted may arrive
+         * late". 2s is under a realistic next-swipe and over YouTube's typical title paint.
+         */
+        const val DEFAULT_ABSORB_MS = 2_000L
     }
 }

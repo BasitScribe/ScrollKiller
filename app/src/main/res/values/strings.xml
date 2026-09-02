@@ -65,6 +65,10 @@
     <!-- Today tab. %1$s is a minutes value like "4.8". -->
     <string name="today_time_estimate">~%1$s mins scrolling today</string>
     <string name="today_breakdown_title">By app</string>
+    <!-- %1$d is blocking-app total, %2$d the daily limit. YouTube is BETA but still in the lock. -->
+    <string name="today_limit_progress">%1$d of %2$d toward the lock</string>
+    <string name="today_limit_covers">Lock counts: %1$s</string>
+    <string name="today_beta_footnote">BETA means the count is still being tuned. TikTok and Snapchat are counted here; they do not lock the screen.</string>
 
     <!-- Insights tab (D82). Replaces the old Apps tab, whose per-app bars were today-only and
          already duplicated by the Today tab's "By app" card; this adds the range dimension. -->
@@ -87,7 +91,7 @@
     <string name="insights_partial_week">This week so far</string>
     <string name="insights_by_app">By app</string>
     <string name="insights_empty_title">Nothing to chart yet</string>
-    <string name="insights_empty_body">Once you scroll a tracked app, your daily totals and streaks show up here.</string>
+    <string name="insights_empty_body">Once you scroll Instagram, YouTube, TikTok or Snapchat, your daily totals and streaks show up here.</string>
 
     <!--
         Milestones (D83). The counterweight to the guilt engine: the block screen keeps the scolding,
@@ -122,7 +126,7 @@
         than apologising for a blank box.
     -->
     <string name="empty_today_title">Nothing counted yet</string>
-    <string name="empty_today_body">Open Instagram Reels or YouTube Shorts and your count starts here.</string>
+    <string name="empty_today_body">Open Instagram Reels, YouTube Shorts, TikTok or Snapchat Spotlight and the count starts here.</string>
     <string name="empty_apps_body">Once you scroll a tracked app, it shows up here with its own bar.</string>
 
     <!-- Settings tab. -->

@@ -51,6 +51,36 @@ class PlatformRegistryTest {
     }
 
     @Test
+    fun `an IDENTITY_CHANGE platform must be ENFORCED, because its scrolls now count (D90)`() {
+        // A NEW invariant, created by D90's scroll pulse and worth stating before anyone trips it.
+        //
+        // The pulse counts an advance from the mere ARRIVAL of a scroll event on the surface — it
+        // reads no node text, which is the entire point (it works when the next Short shares a
+        // creator). Its safety therefore rests wholly on the surface gate: under ENFORCED, a
+        // scroll only counts inside the toured player. Under SHADOW the `countable` check passes
+        // regardless of the marker, so every container scroll ANYWHERE in the app would count as
+        // an item — the whole feed, search, comments, settings.
+        //
+        // For the identity path alone that mistake was survivable (an off-surface tree yields no
+        // handle, so it reads UNREADABLE and nothing happens). For the pulse it is not, because
+        // there is nothing to fail to read. Hence a test rather than a comment.
+        PlatformRegistry.enabled
+            .filter { it.usesIdentityAdvance }
+            .forEach { spec ->
+                assertEquals(
+                    "${spec.platform} counts scroll pulses (D90) and MUST be ENFORCED — under " +
+                        "SHADOW every container scroll in the whole app would count as an item",
+                    GatingMode.ENFORCED,
+                    spec.gating,
+                )
+                assertTrue(
+                    "${spec.platform} is ENFORCED but has no markers, which passes through",
+                    spec.surfaceMarkers.isNotEmpty(),
+                )
+            }
+    }
+
+    @Test
     fun `each platform uses the advance strategy its capture supports (D34)`() {
         // Instagram reports a real scrollDeltaY (calibrated 49/50, D11).
         assertEquals(
@@ -65,6 +95,20 @@ class PlatformRegistryTest {
         )
         assertTrue(PlatformRegistry.specFor(Platform.YOUTUBE).usesIdentityAdvance)
         assertFalse(PlatformRegistry.specFor(Platform.INSTAGRAM).usesIdentityAdvance)
+        // TikTok / Snapchat: deltaY is commonly 0, same family as Shorts, but they have no
+        // per-item identity. EVENT_PULSE counts the container scroll; SHADOW stays.
+        assertEquals(
+            AdvanceStrategy.EVENT_PULSE,
+            PlatformRegistry.specFor(Platform.TIKTOK).advanceStrategy,
+        )
+        assertEquals(
+            AdvanceStrategy.EVENT_PULSE,
+            PlatformRegistry.specFor(Platform.SNAPCHAT).advanceStrategy,
+        )
+        assertTrue(PlatformRegistry.specFor(Platform.TIKTOK).usesScrollPulse)
+        assertTrue(PlatformRegistry.specFor(Platform.SNAPCHAT).usesScrollPulse)
+        assertFalse(PlatformRegistry.specFor(Platform.TIKTOK).usesIdentityAdvance)
+        assertFalse(PlatformRegistry.specFor(Platform.INSTAGRAM).usesScrollPulse)
     }
 
     @Test

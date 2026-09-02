@@ -4,8 +4,7 @@ Anti-doomscroll app — detect reels on-device, block at your limit, unlock with
 
 > Vault home (replaces Welcome). Open **Outline** or a Mind Map plugin on this note.
 > Full audit for Claude/code: `docs/PROJECT_MAP.md` in the repo.
-> Last synced: **2026-08-04** (Insights D82 · escalation D83 · suite 7 D84 · guilt **217** D85+D86 ·
-> bubble **motion** D86 · premium pass D87 · **reprieve went global D88** · **sync is ~2s** D89).
+> Last synced: **2026-09-02** (D91 YT absorb 2s · TT/SC EVENT_PULSE · guilt **243** T4 **129**/150).
 
 ---
 
@@ -26,7 +25,8 @@ mindmap
       Suite seven challenges
       Escalation ladder D83
       Insights replaces Apps
-      Guilt 217 T3 closed
+      Guilt 243 T3 closed T4 129
+      YT absorb 2s D91
       Bubble motion D86 D87
       Reprieve global D88
       Five days set COMPLETE
@@ -98,7 +98,7 @@ mindmap
 - Flat 15 min reward at every rung
 
 #### [[Guilt]]
-- Pack **217** lines; **tier 3 CLOSED**; T4 at **103/150**; premium gating real (D85/D86)
+- Pack **243** lines; **tier 3 CLOSED**; T4 at **129/150**; premium gating real (D85/D86/D91)
 - Display 6.5s → gap derives to 8s (D83)
 
 #### [[Data]]

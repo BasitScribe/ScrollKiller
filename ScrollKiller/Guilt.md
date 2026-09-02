@@ -10,7 +10,7 @@ mindmap
     Pack
       guilt_pack.json
       roast existential reverse_psych pride
-      217 lines D85 then D86
+      243 lines D85 D86 D91
       Hinglish desi Gen-Z
       count and minutes tokens
     Access D85
@@ -44,7 +44,7 @@ mindmap
       Never write the gap as a literal
     Expand
       T3 done at 40 CLOSED
-      T4 open at 103 of 150
+      T4 open at 129 of 150
       Covers about 270 scrolls a day
 ```
 
@@ -71,8 +71,8 @@ behind a paywall.
 
 Its band is finite — 100 to 149, firing every ten scrolls — so it can only ever burn five lines a
 day, however hard anyone scrolls. Thirty-five covers a week for anybody; at forty it is closed for
-good. Tier 4 has no ceiling and stays the open one — **103 free lines of the 150 target** after D86 added
-sixty-two, which covers roughly a 270-scroll day (48 covered 200, the original 18 covered 160).
+good. Tier 4 has no ceiling and stays the open one — **129 free lines of the 150 target** after D91
+(D86 was 103), which covers more of the ~320-scroll heavy day the target is set against.
 
 BrainState (mascot 50/150) ≠ GuiltThresholds (what we say) — keep separate.
 

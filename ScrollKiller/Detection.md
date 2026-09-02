@@ -13,8 +13,8 @@ mindmap
       Emits to overlay and Room
     Strategies
       DELTA_Y_FORWARD IG
-      IDENTITY_CHANGE YT
-      EVENT_PULSE unused
+      IDENTITY_CHANGE YT plus pulse
+      EVENT_PULSE TikTok Snapchat D91
     Surface
       SurfaceMatcher
       Marker ancestry

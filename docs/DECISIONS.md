@@ -79,6 +79,7 @@
 - **D59** — The backend lives in THIS repo: monorepo with path-filtered CI, because the sync contract has two sides
 - **D60** — The security baseline exists before the first endpoint, and the pipeline is a deliverable
 - **D90** — YouTube undercounted because the identity was the CHANNEL, not the Short: a repeat creator was invisible, and a whole session inside one channel counted 1
+- **D91** — YouTube still double-counted because pulse absorb died at 500ms; TikTok/Snapchat counted nothing for the same deltaY=0 reason. Pulse absorb is 2s; TT/SC use EVENT_PULSE; they stay SHADOW and never block
 - **D62** — The data layer: two database URLs that are not interchangeable, an ENUM that stores wire values, and a SCHEMA.md the build parses
 - **D65** — Reconciliation: displayed = server-acked total + local unacked deltas. The server owns acked history and the date boundary; the device owns what it has observed and not yet had credited
 - **D66** — Redis and FCM are Phase 4. Infrastructure with no consumer is a liability, not a head start
@@ -594,3 +595,21 @@ The pair fix above closes the reported bug ONLY IF the tree yields a title, and 
 ⚑ **THE COST, NAMED BEFORE IT IS MEASURED:** a partial drag that snaps back to the same Short emits scroll events and will count. That is an OVERcount, the direction this project refuses everywhere else (D24/D27), and it is accepted here deliberately — the alternative it replaces is losing an entire session to a single-creator feed, and a bounded few-percent error beats a 100% loss. It is capped by `minAdvanceIntervalMs`, and quantifying it is precisely what the D34 acceptance run measures. **If the run shows it is material, the pulse comes out and the title ids get toured instead** — that is the fallback, recorded now so it is a decision rather than a rediscovery.
 
 Two independent signals now have to BOTH fail for a Short to go uncounted, and they fail for unrelated reasons — one needs readable text, the other needs a scroll event. YouTube stays `Maturity.BETA`. 459 tests / 44 suites; `assembleDebug` and `compileReleaseKotlin` green.
+
+---
+
+**D91. YouTube still double-counted because the pulse absorb died at 500ms, and TikTok/Snapchat counted nothing for the same dead-direction reason (reported from real use, 2026-09-02).**
+
+THE REPORT, after D90: YouTube is still not counting properly; the other beta apps in the registry sit at zero; the Today tab does not show them honestly; the guilt lines should sound more like India Gen-Z, explicit and funny, without going cruel.
+
+**YOUTUBE WAS NOW OVERCOUNTING.** D90's addendum counted the scroll pulse and armed absorb for `minAdvanceIntervalMs` (500ms). The pulse does not set `lastIdentity`. YouTube often paints handle/title around 800ms, so the identity path treated the late pair as a *new* Short and Room incremented twice per swipe. The existing absorb test only covered 499ms — inside the floor, so the remaining defect was untested. **FIX:** absorb is `DEFAULT_ABSORB_MS = 2_000`, a separate constant, because the floor answers "do not count two swipes inside a fling" and the absorb answers "the identity of the Short you just counted may arrive late". 2s is under a realistic next-swipe and over a typical title paint. The 60s "absorb is not forever" test still holds. YouTube stays `IDENTITY_CHANGE` + pulse, `ENFORCED`, `BETA`, blocks via D73.
+
+**TIKTOK AND SNAPCHAT WERE AT ZERO for the reason D34 recorded on Shorts.** `DELTA_Y_FORWARD` needs a direction; those vertical pagers commonly report `scrollDeltaY = 0`, so `SwipeDetector` ignored every event as `SAME`. `AdvanceStrategy.EVENT_PULSE` was declared unused since D50. It now counts any container scroll, quiet-gap debounced, via `SwipeDetector.onPulse`. **They stay SHADOW, BETA, `blockEnabled = false`.** A new test already forbids `blocksWhileUncalibrated` on SHADOW — Snapchat still overcounts Chat/Stories/Map, which is why it must not lock the screen. Facebook stays out of `enabled`. Instagram is untouched (`DELTA_Y_FORWARD`, STABLE).
+
+**TODAY / INSIGHTS.** Lock progress is `blocksAtLimit` only (IG + YT). All four enabled platforms always list. A beta footnote names the split: TikTok and Snapchat count here; they do not lock. Brand palette and overlay motion are untouched. Invariant 6 is untouched.
+
+**GUILT.** Pack revision 4 → 5. **217 → 243 lines.** T4 free **103 → 129** of 150 (premium-inclusive 146). T1–T3 sizes unchanged. Voice punched toward explicit desi Gen-Z humour (Hinglish + slang). D9 holds: no body/family/money/grades/mental-health jabs, no maa/behen gaali. `{count}` / `{minutes}` only, ≤90 chars.
+
+**A TEST THAT GREW INTO A LIE.** `GuiltSelectorTest`'s fallback gradient spaced lines 8 hours × pool size. Once T4 grew, the oldest timestamps fell *outside* the 7-day no-repeat window, so the test stopped exercising exhaustion and started asserting a different path. Spacing is now a 6-day span derived from pool size.
+
+NO change to gating modes, to `blocksWhileUncalibrated`, to the block Exit path, to overlay motion, or to Instagram. **462 unit tests / 44 suites green.** ⚑ Device: HANDOFF Run U — 15 Shorts should land ~15, not ~30; TikTok/Snapchat should move off zero on their FYP/Spotlight; neither must ever cover the screen.

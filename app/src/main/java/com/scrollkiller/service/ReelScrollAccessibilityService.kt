@@ -413,6 +413,28 @@ class ReelScrollAccessibilityService : AccessibilityService() {
                     branch = YtProbe.Branch.DEBOUNCED_QUIET_GAP
                     reason = "pulse inside the advance floor"
                 }
+            } else if (spec.advanceStrategy == AdvanceStrategy.EVENT_PULSE) {
+                // TikTok / Snapchat: container scroll is the advance, direction ignored.
+                // Quiet-gap debounce (SwipeDetector), not the identity floor — these platforms
+                // have no identity path to absorb a late paint.
+                val detector = detectors.getOrPut(spec.platform) { SwipeDetector(spec.minAdvanceIntervalMs) }
+                if (detector.onPulse(now)) {
+                    repository.record(
+                        spec,
+                        now,
+                        sourcePackage = event.packageName?.toString() ?: spec.packageName,
+                    )
+                    counted = true
+                    branch = YtProbe.Branch.COUNTED
+                    reason = if (spec.gating == GatingMode.SHADOW && !markerMatched) {
+                        "counted (EVENT_PULSE, SHADOW: marker UNMATCHED)"
+                    } else {
+                        "counted (event pulse)"
+                    }
+                } else {
+                    branch = YtProbe.Branch.DEBOUNCED_QUIET_GAP
+                    reason = "event pulse inside quiet-gap"
+                }
             } else {
                 val detector = detectors.getOrPut(spec.platform) { SwipeDetector(spec.minAdvanceIntervalMs) }
                 // Debounce the fling burst into a single forward advance.

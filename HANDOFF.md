@@ -20,7 +20,35 @@ Nothing below in the attach-timing section needs re-running unless a future chan
 `BlockScreenController.show`. What DOES remain open is the YouTube calibration (Run E) and the
 restored reprieve (new Run H).
 
-## ← CURRENT: the device-debt session — Runs Q, P and M in one sitting
+## ← CURRENT: YouTube + beta counts (D91) — then the still-owed device-debt
+
+> ⚑ **Run U outranks the rest of this file for this session.** It is the second reported
+> counting bug on YouTube (D90 then D91) and the first time TikTok/Snapchat are expected to
+> leave zero. Device-debt Runs Q/P/S/M/R stay owed below; do not skip U to do them.
+
+### Run U — YouTube is 1:1, TikTok/Snapchat move, neither locks (D91) — ⚑ NOT YET RUN
+
+**Setup:** limit high (so the block does not interrupt counting). Accessibility + overlay on.
+Clear today's counts or note the starting numbers.
+
+- [ ] **YouTube Shorts, mixed feed, 15 swipes.** Today → YouTube should move **about 15, not ~30**.
+      ~30 is the D91 double-count (pulse + late identity). Idle 30s on one Short: count must not
+      climb. A creator's own Shorts tab must still climb (D90).
+- [ ] **Partial drag that snaps back** may bump once — accepted overcount, D90 addendum. If every
+      tiny nudge adds one, the pulse is too hungry: report it, do not "tune on the phone".
+- [ ] **TikTok For You.** Swipes must move the TikTok row off zero. It stays **Beta**. Opening
+      the lock at any TikTok count is a P0 — SHADOW must not cover the screen.
+- [ ] **Snapchat Spotlight.** Swipes should move Snapchat off zero. Chat/Stories/Map may also
+      bump it (SHADOW overcount — known, not a fail). **Must never lock.**
+- [ ] **Today lock bar** is IG + YouTube only. A TikTok binge must not fill it. All four apps
+      listed even at zero. Footnote: beta counts, TT/SC do not lock.
+- [ ] **Instagram Reels still ~1:1.** D91 must not have touched `DELTA_Y_FORWARD`.
+- [ ] **Exit still leaves** from a YouTube block (invariant 6). Do this after the counting pass
+      with the limit at 20 if you have time; otherwise Run E still covers it.
+
+---
+
+## The still-owed device-debt session — Runs Q, P and M
 
 > ⚑ **RUN LETTERS WERE RENAMED, and this is the only place that says so.** The D83/D84/D85 runs were
 > first written as K/L/M, which collided with three runs that already existed — **Run K** is D78's

@@ -80,6 +80,7 @@ data class PlatformDisplay(
     val displayName: String,
     val total: Int,
     val isBeta: Boolean,
+    @androidx.annotation.DrawableRes val iconRes: Int = 0,
 )
 
 /**
@@ -181,6 +182,7 @@ class InsightsViewModel(app: Application) : AndroidViewModel(app) {
                     displayName = spec?.displayName ?: row.platform.id,
                     total = row.total,
                     isBeta = spec?.isBeta ?: false,
+                    iconRes = spec?.iconRes ?: 0,
                 )
             },
             measuredSeconds = seconds,

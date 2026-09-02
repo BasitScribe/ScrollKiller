@@ -146,13 +146,13 @@ class GuiltPoolMathTest {
         assertEquals(24, poolSize(GuiltTier.MILD))
         assertEquals(24, poolSize(GuiltTier.MEDIUM))
         assertEquals(40, poolSize(GuiltTier.STRONG))
-        assertEquals(103, poolSize(GuiltTier.EXTREME))
+        assertEquals(129, poolSize(GuiltTier.EXTREME))
 
         // Premium is additive on top and must never be counted toward a target.
         assertEquals(26, poolSizeWithPremium(GuiltTier.MILD))
         assertEquals(26, poolSizeWithPremium(GuiltTier.MEDIUM))
         assertEquals(45, poolSizeWithPremium(GuiltTier.STRONG))
-        assertEquals(120, poolSizeWithPremium(GuiltTier.EXTREME))
+        assertEquals(146, poolSizeWithPremium(GuiltTier.EXTREME))
 
         // Tiers 1-2: one fire/day, so anything past 7 covers any user at all. Long since met.
         assertTrue(GuiltPoolMath.sustainedScrollsPerDay(GuiltTier.MILD, poolSize(GuiltTier.MILD)) >= 2_000)
@@ -168,20 +168,12 @@ class GuiltPoolMathTest {
             GuiltPoolMath.requiredPool(GuiltTier.STRONG, 2_000) <= poolSize(GuiltTier.STRONG),
         )
 
-        // Tier 4 is unbounded and remains the open one — but the gap is now a stretch rather than
-        // a chasm. 18 free lines covered a 160/day user, 48 covered 200, and 103 covers 270. The
-        // 150 target is set against the ~320/day heavy user (see EXPANSION_TARGETS), so this is
-        // the first time the shipped pack is within one authoring session of the commitment
-        // instead of within several. The fallback still carries everything above it, loudly.
-        //
-        // The RANGE, not the exact figure, on purpose: this number is derived by simulating the
-        // real GuiltFiring, so it moves if the schedule is ever retuned — and a retune should
-        // fail this test with a readable message about coverage, not with an off-by-ten equality
-        // that tells the next reader nothing about whether the coverage got better or worse.
+        // Tier 4 is unbounded and remains the open one. 103 covered 270; 129 covers more of the
+        // ~320/day heavy user the 150 target is set against. Still short, still the odometer.
         val tier4Covers = GuiltPoolMath.sustainedScrollsPerDay(GuiltTier.EXTREME, poolSize(GuiltTier.EXTREME))
         assertTrue(
             "tier 4 at ${poolSize(GuiltTier.EXTREME)} free lines covers up to $tier4Covers scrolls/day",
-            tier4Covers in 250..320,
+            tier4Covers in 270..340,
         )
     }
 

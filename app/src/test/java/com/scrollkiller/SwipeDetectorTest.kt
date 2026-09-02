@@ -80,4 +80,16 @@ class SwipeDetectorTest {
     fun `first ever down always counts even at timestamp zero`() {
         assertEquals(1, countAdvances(listOf(ScrollDirection.DOWN to 0L)))
     }
+
+    @Test
+    fun `an EVENT_PULSE treats any scroll as an advance, including SAME`() {
+        // TikTok/Snapchat Shorts-style pagers often report deltaY=0 (SAME), the same dead
+        // direction that made YouTube count nothing under DELTA_Y_FORWARD. EVENT_PULSE still
+        // has to collapse a fling burst — it just does not care about direction.
+        val detector = SwipeDetector(intervalMs)
+        assertEquals(true, detector.onPulse(0L))
+        assertEquals(false, detector.onPulse(100L))
+        assertEquals(false, detector.onPulse(180L))
+        assertEquals(true, detector.onPulse(1_000L))
+    }
 }

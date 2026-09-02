@@ -2,8 +2,7 @@
 
 > **Single entry point.** Living audit + index of every doc in the project. Pointers only — never a
 > dump of ROADMAP/DECISIONS.
-> Last audited: **2026-08-10** — **Phase 3b DONE (D62); Phase 3c (auth) is next.** Android state
-> unchanged from the 2026-08-04 audit below (Phase 2 · challenge suite **7/7 — D84**, 4 device-verified + 3 not · brand pass done D58 · **YT blocks via D73 override** · **ONE global daily limit (D76)** · **STRICT MODE — no free "5 more minutes" (D77)** · **✅ BLOCK SAGA CLOSED (D72)** · **Pass A (D78) + Pass B1 data (D80/D81) + Pass B2 Insights screen (D82) all SHIPPED** — nav is **Today / Insights / Settings**, Apps tab deleted · five-days set **COMPLETE — 1/2/3/4 shipped (D83/D84/D85/D86)** · bubble MOTION + real launcher mark + Insights glyph (D86) · guilt pack **217, T4 103/150** · **✅ 459 tests / 44 suites GREEN, run 2026-08-11 on the dev machine — `BubbleMotionTest` DID execute.** The long-standing "no SDK, D86 never run" caveat is retired: the SDK *is* on this machine, and the build needs `JAVA_HOME` pointed at **Temurin 21** — the Android Studio JBR is Java 25 now and the Gradle daemon rejects it.)
+> Last audited: **2026-09-02** — **D91:** YT pulse absorb 2s (was 500ms double-count) · TT/SC `EVENT_PULSE` still SHADOW · guilt **243, T4 129/150** · **✅ 462 tests / 44 suites GREEN.** Phase 3c (auth) is still next. Android otherwise unchanged from the 2026-08-04 audit below (Phase 2 · challenge suite **7/7 — D84**, 4 device-verified + 3 not · brand pass done D58 · **YT blocks via D73 override** · **ONE global daily limit (D76)** · **STRICT MODE — no free "5 more minutes" (D77)** · **✅ BLOCK SAGA CLOSED (D72)** · **Pass A (D78) + Pass B1 data (D80/D81) + Pass B2 Insights screen (D82) all SHIPPED** — nav is **Today / Insights / Settings**, Apps tab deleted · five-days set **COMPLETE — 1/2/3/4 shipped (D83/D84/D85/D86)** · bubble MOTION + real launcher mark + Insights glyph (D86). Build needs `JAVA_HOME` pointed at **Temurin 21** — the Android Studio JBR is Java 25 now and the Gradle daemon rejects it.)
 >
 > **Device session 2026-08-03 (upgrade path on A015):** built OLD APK from `03cebae` (DB v3, no
 > welcome) in a worktree + NEW from current tree; unit suite green before install. **Run M (D80)
@@ -54,6 +53,12 @@
 > this project's own Windows dev machine at all** — `zoneinfo` needs a system tz database Windows
 > does not have, and nobody had ever run the backend gates outside Linux CI. **167 backend tests, all
 > four gates green, 100% coverage.** Zero Android files touched. **Next: 3c (auth).**
+>
+> **2026-09-02 — ⚑ YOUTUBE OVERCOUNT AFTER D90 + BETA APPS AT ZERO (D91).** Pulse absorb died at
+> 500ms; YouTube paints title ~800ms → identity counted a second Short. Absorb is now **2s**.
+> TikTok/Snapchat sat at 0 because `DELTA_Y_FORWARD` needs a direction and those pagers report
+> `scrollDeltaY=0` — they now use `EVENT_PULSE`, still **SHADOW / never block**. Today lock-bar =
+> IG+YT only. Guilt **217 → 243**, T4 **103 → 129**/150. **462 / 44 green.** ⚑ Device: HANDOFF Run U.
 >
 > **2026-08-11 — ⚑ YOUTUBE UNDERCOUNT FIXED (D90), reported from real use.** The per-Short identity
 > was the **channel handle alone**, so two Shorts in a row by one creator compared equal and the
@@ -113,7 +118,7 @@ for f in CLAUDE.md HANDOFF.md docs/*.md ScrollKiller/*.md; do echo "$(grep -c '^
 | [../CLAUDE.md](../CLAUDE.md) | Invariants (the 6 non-negotiables), stack, conventions, session protocol | **Always, first.** It is short and it overrides everything |
 | **this file** | Project audit, phase status, package map, per-area summaries | **Always, second.** Orient here before opening anything else |
 | [ROADMAP.md](ROADMAP.md) | Phases, checkboxes, and an append-only session log | You need the CURRENT phase's open items. **Read the `← CURRENT` section only** — the status log is long and historical |
-| [DECISIONS.md](DECISIONS.md) | ADRs **D1…D89** (~270 KB), append-only, with a title index at the top. **D61, D63 and D64 remain reserved-and-unwritten**; D62 was written on 2026-08-10 once 3b could verify its claims against the real dialect instead of guessing | You need *why* something is the way it is. **Never open this file whole — it is the single biggest token sink in the repo.** Use the topic table below to get candidate `Dn`s, then read only those. D55+ titles are greppable via `^\*\*D` |
+| [DECISIONS.md](DECISIONS.md) | ADRs **D1…D91** (~270 KB), append-only, with a title index at the top. **D61, D63 and D64 remain reserved-and-unwritten**; D62 was written on 2026-08-10 once 3b could verify its claims against the real dialect instead of guessing | You need *why* something is the way it is. **Never open this file whole — it is the single biggest token sink in the repo.** Use the topic table below to get candidate `Dn`s, then read only those. D55+ titles are greppable via `^\*\*D` |
 | [../HANDOFF.md](../HANDOFF.md) | Manual on-device checklists, newest first | You are writing or running device verification. Only the `← CURRENT` block is live |
 | [SCHEMA.md](SCHEMA.md) | Server tables + sync flow (**near-live ~2s since D89**) | Phase 3+ backend work. ⚑ **Its table block is EXECUTABLE since D62** — `backend/tests/test_schema_parity.py` compares it to `app/models/` both ways, so adding a column means editing this file in the same commit |
 | [../backend/DEPLOY.md](../backend/DEPLOY.md) | Hosting choices, the two Neon URLs, spin-down behaviour, first-deploy order, blockers | Before touching deployment, and before anyone wonders why there are two database URLs |
@@ -143,14 +148,14 @@ the markdown links do not already provide.
 
 ## Find the ADR without opening DECISIONS.md
 
-**This table is the point of this file.** `DECISIONS.md` is ~248 KB across 84 ADRs; loading it to
+**This table is the point of this file.** `DECISIONS.md` is ~248 KB across 91 ADRs; loading it to
 answer one "why" question is the most expensive mistake available in this repo. Look the topic up
 here, then read **only** the two or three `Dn` it names. Bold = the current, load-bearing decision
 for that area; the others are the history that led to it and are usually *not* worth re-reading.
 
 | Topic | ADRs | Current position in one line |
 |---|---|---|
-| Detection / advance signal | D11, D15, D34, **D90** | IG = `DELTA_Y_FORWARD` (calibrated 49/50); YT = `IDENTITY_CHANGE` on **handle AND title as a pair** — ⚑ **D90 fixed a real undercount: the identity used to be the channel alone, so consecutive Shorts by one creator were invisible and a session inside one channel counted 1.** Absent field ≠ different field, or a late-rendering title double-counts every Short |
+| Detection / advance signal | D11, D15, D34, D90, **D91** | IG = `DELTA_Y_FORWARD` (calibrated 49/50); YT = `IDENTITY_CHANGE` + scroll pulse, absorb **2s** (D91 — 500ms was double-counting late titles); TT/SC = `EVENT_PULSE` still SHADOW. Absent field ≠ different field, or a late-rendering title double-counts every Short |
 | Surface gating (Reels vs feed) | D24, D26, D27, D28 | `GatingMode`; IG `clips_viewer`, YT `reel_recycler`, both **ENFORCED** |
 | Platform maturity / eligibility | D32, D57, **D73** | `Maturity` BETA never blocks — *except* YT via the explicit `blocksWhileUncalibrated` override |
 | Daily limit | D19, D49, **D76**, D88 | ONE global limit across every blocking app. *What* counts is global (`BlockPolicy.blockingTotal`); *where* it may draw stays per-platform. ⚑ **D88 moved the REPRIEVE global to match** — budget and the thing you spend to escape it must share a currency |
@@ -159,7 +164,7 @@ for that area; the others are the history that led to it and are usually *not* w
 | Block window lifecycle | D49, D51, D52, D70, D71, **D72** | ⚑ **Read D72 first** — the premature attach check was the whole root cause; D52/D70's ROM attribution is withdrawn |
 | Block escapes / reprieves | D49, D50, D74, D75, D77, **D88** | **STRICT MODE**: Exit + Back always, and ONE earned reprieve (15 min challenge). No free bail. Sensorless device = Exit alone, pinned by `BlockEscapeTest`. **D88: the reprieve is GLOBAL like the limit** — it was per-platform, so an exercise done in IG did not get you out of YT |
 | Challenges | D50, D53, D54, D55, D83, **D84** | Suite is **7/7** (4 device-verified, 3 not); user picks, flat 15-min reward at every rung. Targets **ESCALATE** per completed reprieve, capped at 4× base, reset daily. D84 also records three REJECTED candidates and why |
-| Guilt content | D9, D33, D47, D48, **D85** | `assets/guilt_pack.json`, remote-shaped, weighted no-repeat rotation. **217 lines; T3 CLOSED, T4 open at 103/150.** Premium gated on `access`, free pool has no fallback into paid |
+| Guilt content | D9, D33, D47, D48, D85, **D91** | `assets/guilt_pack.json`, remote-shaped, weighted no-repeat rotation. **243 lines; T3 CLOSED, T4 open at 129/150.** Premium gated on `access`, free pool has no fallback into paid |
 | Guilt timing | D46, D48, **D83** | Display 6.5s → gap **8s DERIVED** (never write the gap as a literal). Schedule is in scrolls, gap is in seconds — two units, two files |
 | Mascot / brand | D36, D58, **D37** | One `MascotArt` mapping; art is **height**-bounded and not square |
 | Onboarding / permissions | D13, D16, D51, D70, **D78** | **Welcome → disclosure → overlay → dashboard.** Value before the ask; the welcome requests nothing so invariant 5 holds. Route is a tested pure function (`OnboardingRoute`) |
@@ -172,7 +177,7 @@ for that area; the others are the history that led to it and are usually *not* w
 
 *(D61–D64 are reserved placeholders, deliberately unwritten — see D60's closing note.)*
 
-**Index is complete through D89**, with **D61, D63 and D64 still deliberately unwritten** (cold
+**Index is complete through D91**, with **D61, D63 and D64 still deliberately unwritten** (cold
 starts, refresh-token rotation, server-side day boundary — each gets written by the sub-phase that
 verifies it, per D60's closing note). **D62 is now written**, because 3b measured pgbouncer's
 behaviour against the installed dialect rather than recalling it.
@@ -230,6 +235,8 @@ mindmap
       Reprieve went global D88
       Backend data layer D62
       YT identity is a pair D90
+      YT absorb 2s TT SC pulse D91
+      Guilt 243 T4 at 129 D91
     Android packages
       service detection overlay block
       data Room CountRepository
@@ -297,7 +304,7 @@ mindmap
 
 #### Roadmap status (audit 2026-08-03)
 - **Phase 1 ✅** Detection MVP — IG calibrated 49/50 (D11); ±2/50 exit still open as formal checkbox
-- **Phase 2 ← CURRENT** Block live on IG (D49 ✅); suite **7/7** (D84 — 4 device-verified, 3 not); chooser + "Surprise me"; brand pass (D58); strict mode (D77); one global limit (D76); welcome onboarding (D78); Insights data+screen (D80–D82); escalation (D83); guilt **155 / T3 closed** (D85)
+- **Phase 2 ← CURRENT** Block live on IG (D49 ✅); suite **7/7** (D84 — 4 device-verified, 3 not); chooser + "Surprise me"; brand pass (D58); strict mode (D77); one global limit (D76); welcome onboarding (D78); Insights data+screen (D80–D82); escalation (D83); guilt **243 / T3 closed / T4 129** (D85/D86/D91)
 - ✅ **D70/D71/D72 — the block saga is CLOSED and device-verified.** Premature `isAttachedToWindow` was the whole root cause; D52/D70's ROM attribution withdrawn. Invariant 6 demonstrated live.
 - **Open P2 work**
   - ~~**Piece 3** — UI/tab refresh + bubble animation~~ **DONE (D86).** Kept cheap: draw-time properties only, motion budget tested against `DISPLAY_MS`, no new palette. ⚑ Run S owed
@@ -322,9 +329,9 @@ mindmap
 | Platform | Packages | Marker | Gating | Advance | Maturity | blocksAtLimit |
 |----------|----------|--------|--------|---------|----------|---------------|
 | Instagram | `com.instagram.android` | `clips_viewer` | ENFORCED | DELTA_Y_FORWARD 200ms | **STABLE** | **true** |
-| YouTube | `com.google.android.youtube`, `app.revanced.android.youtube` | `reel_recycler` | ENFORCED | IDENTITY_CHANGE 500ms | **BETA** (still uncalibrated) | **true via override** (D73) |
-| TikTok | `com.zhiliaoapp.musically` | feed_* candidates | SHADOW | DELTA_Y_FORWARD | BETA | false |
-| Snapchat | `com.snapchat.android` | `spotlight` | SHADOW | DELTA_Y_FORWARD | BETA | false |
+| YouTube | `com.google.android.youtube`, `app.revanced.android.youtube` | `reel_recycler` | ENFORCED | IDENTITY_CHANGE + pulse, absorb 2s (D91) | **BETA** (still uncalibrated) | **true via override** (D73) |
+| TikTok | `com.zhiliaoapp.musically` | feed_* candidates | SHADOW | EVENT_PULSE (D91) | BETA | false |
+| Snapchat | `com.snapchat.android` | `spotlight` | SHADOW | EVENT_PULSE (D91) | BETA | false |
 
 - `blocksAtLimit = blockEnabled && (STABLE || blocksWhileUncalibrated)` — never ask raw `blockEnabled` alone
 - ⚠️ **TWO platforms can block: Instagram and YouTube (D73, reversing D57).** YouTube's Shorts capture was never produced across four sessions, and it still has not been — so YT was NOT promoted to STABLE. It blocks via an explicit `blocksWhileUncalibrated` override, keeps `Maturity.BETA`, and keeps its Beta badge, because the count really is unmeasured and the badge is the honest disclosure. **`Maturity.BETA` therefore no longer implies "cannot block"** — it means "the count is not calibrated", which is all it ever measured. The override is the split D32 prescribed; taking it was an owner decision that trades a few Shorts of accuracy for coverage.
@@ -413,9 +420,9 @@ mindmap
 ### Guilt (`guilt/` + `assets/guilt_pack.json`)
 #### Model
 - Pack: remote-shaped JSON; categories roast / existential / reverse_psych / **pride**
-- **217 lines (D85 → D86)**, India Gen-Z leaning hard into Hinglish; `{count}` / `{minutes}` tokens only (D47)
-- **Expansion targets:** T1/T2=18 ✅ · **T3=40 ✅ CLOSED** · T4=150 (**103 free** — still open, covers ~270 scrolls/day)
-- **Free pools:** T1 24 · T2 24 · **T3 40** · T4 **103**. With premium: 26 / 26 / 45 / **120**
+- **243 lines (D85 → D86 → D91)**, India Gen-Z, more explicit Hinglish; `{count}` / `{minutes}` tokens only (D47)
+- **Expansion targets:** T1/T2=18 ✅ · **T3=40 ✅ CLOSED** · T4=150 (**129 free** — still open)
+- **Free pools:** T1 24 · T2 24 · **T3 40** · T4 **129**. With premium: 26 / 26 / 45 / **146**
 - ⚑ **T3 is closed PERMANENTLY**, not "covered for now": its band is finite (100–149 at every 10),
   so consumption caps at 5/day at any scroll rate and 40 beats the 35 ceiling forever. T4 is
   unbounded and is the only tier the build still tracks as short
@@ -525,7 +532,7 @@ state, not a bug; the test says so and names what to do when the next strategy i
 - `onResume` re-check; skip overlay + welcome-seen both persisted
 
 #### Dashboard (Compose Material3)
-- Tabs: **Today** (mascot + total + time + guilt + permission banner) / **Insights** (D82) / **Settings**
+- Tabs: **Today** (mascot + total + time + guilt + permission banner; D91 lock-bar = blocking apps only, all four platforms listed) / **Insights** (D82) / **Settings**
 - **Insights** replaced Apps (D82) — Apps was today-only and duplicated Today's "By app" card.
   `InsightsViewModel` produces ONE immutable state per emission; bars are weighted `Box`es, not a
   `Canvas`; today's bar composes `observeTodaySummary()` so it cannot disagree with the Today tab
@@ -572,6 +579,8 @@ Pure JVM coverage for: detectors, registry, BlockPolicy/Limits/Retry, Permission
 ---
 
 ### Current HANDOFF focus (see HANDOFF.md)
+**← CURRENT is Run U (D91):** 15 Shorts ≈ 15 not 30; TikTok/Snapchat leave zero; neither locks.
+
 **✅ Attach-timing: ANSWERED (D72).** Block saga closed; Runs A–D retired.
 
 **Device session 2026-08-03 (A015) — upgrade path in progress:**

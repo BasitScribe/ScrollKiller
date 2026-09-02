@@ -68,7 +68,7 @@
 
   "schema_version": 2,
   "pack_id": "india-genz-en",
-  "revision": 4,
+  "revision": 5,
   "updated_at": "2026-07-27T00:00:00Z",
   "lang": "en",
   "region": "IN",
@@ -79,12 +79,12 @@
   },
 
   "lines": [
-    { "id": "t1_r1", "category": "roast", "intensity": 1, "weight": 3, "text": "{count} already. Your thumb has done more reps than you have all week." },
-    { "id": "t1_r2", "category": "roast", "intensity": 1, "weight": 4, "text": "The algorithm knows you better than your best friend at this point." },
+    { "id": "t1_r1", "category": "roast", "intensity": 1, "weight": 3, "text": "{count} already. Thumb doing cardio. You doing nothing. Make it make sense." },
+    { "id": "t1_r2", "category": "roast", "intensity": 1, "weight": 4, "text": "The algorithm has you in a situationship. You are the side piece." },
     { "id": "t1_r3", "category": "roast", "intensity": 1, "weight": 3, "text": "You opened this to check one thing. Do you still remember what?" },
     { "id": "t1_r4", "category": "roast", "intensity": 1, "weight": 3, "text": "{count}. Great score in cricket. This is not cricket." },
-    { "id": "t1_r5", "category": "roast", "intensity": 1, "weight": 2, "text": "Quick scroll, you said. That was a while ago, chief." },
-    { "id": "t1_r6", "category": "roast", "intensity": 1, "weight": 2, "text": "Your For You page is basically your therapist now." },
+    { "id": "t1_r5", "category": "roast", "intensity": 1, "weight": 2, "text": "Quick scroll, you said. Bhai that lie has expired." },
+    { "id": "t1_r6", "category": "roast", "intensity": 1, "weight": 2, "text": "Your For You page is your situationship. It will not text back." },
     { "id": "t1_r7", "category": "roast", "intensity": 1, "weight": 3, "text": "{count} strangers have had your full attention today. Nice for them." },
 
     { "id": "t1_e1", "category": "existential", "intensity": 1, "weight": 3, "text": "That is {minutes} minutes you do not get back. No refunds here." },
@@ -103,7 +103,7 @@
 
     { "id": "t2_r1", "category": "roast", "intensity": 2, "weight": 4, "text": "{count}. At this point the app should be paying you rent." },
     { "id": "t2_r2", "category": "roast", "intensity": 2, "weight": 4, "text": "You have watched more of other people's lives today than your own." },
-    { "id": "t2_r3", "category": "roast", "intensity": 2, "weight": 3, "text": "{count} reels in. Your attention span has left the chat." },
+    { "id": "t2_r3", "category": "roast", "intensity": 2, "weight": 3, "text": "{count} in. Attention span packed a bag and left, no note." },
     { "id": "t2_r4", "category": "roast", "intensity": 2, "weight": 3, "text": "You have heard this sound more times than you can count. It was mid the first time." },
     { "id": "t2_r5", "category": "roast", "intensity": 2, "weight": 2, "text": "Somewhere your gym bag is filing a missing person report." },
     { "id": "t2_r6", "category": "roast", "intensity": 2, "weight": 3, "text": "That is one full lecture of scrolling. You are not even taking notes." },
@@ -123,12 +123,12 @@
     { "id": "t2_d2", "category": "pride", "intensity": 2, "weight": 3, "text": "Closing it now is a small win. Small wins still count." },
     { "id": "t2_d3", "category": "pride", "intensity": 2, "weight": 3, "text": "You have stopped before. You can stop now." },
 
-    { "id": "t3_r1", "category": "roast", "intensity": 3, "weight": 4, "text": "{count}. Read that number again, slowly." },
+    { "id": "t3_r1", "category": "roast", "intensity": 3, "weight": 4, "text": "{count}. Read that number again, slowly. That is the whole plot." },
     { "id": "t3_r2", "category": "roast", "intensity": 3, "weight": 4, "text": "{count} scored. Wrong sport, wrong stadium, nobody clapping." },
     { "id": "t3_r3", "category": "roast", "intensity": 3, "weight": 3, "text": "{count} short videos and not one of them was actually for you." },
     { "id": "t3_r4", "category": "roast", "intensity": 3, "weight": 3, "text": "You are not choosing these any more. They are choosing you." },
     { "id": "t3_r5", "category": "roast", "intensity": 3, "weight": 3, "text": "Your thumb has travelled further today than the rest of you has." },
-    { "id": "t3_r6", "category": "roast", "intensity": 3, "weight": 2, "text": "This is the part where a well-adjusted person stands up. Still waiting." },
+    { "id": "t3_r6", "category": "roast", "intensity": 3, "weight": 2, "text": "A well-adjusted person would stand up. You are still here, tharki." },
     { "id": "t3_r7", "category": "roast", "intensity": 3, "weight": 2, "text": "The algorithm has mapped your entire personality. You got nothing back." },
 
     { "id": "t3_e1", "category": "existential", "intensity": 3, "weight": 4, "text": "{minutes} minutes of your one life, spent right here." },
@@ -145,11 +145,11 @@
     { "id": "t3_d2", "category": "pride", "intensity": 3, "weight": 3, "text": "You can end this exact second. No streak to protect, nothing lost." },
     { "id": "t3_d3", "category": "pride", "intensity": 3, "weight": 3, "text": "Stopping at {count} beats stopping at double that. Start here." },
 
-    { "id": "t4_r1", "category": "roast", "intensity": 4, "weight": 4, "text": "{count}. This is not scrolling any more, this is a full-time job." },
+    { "id": "t4_r1", "category": "roast", "intensity": 4, "weight": 4, "text": "{count}. This is not scrolling. This is a full-time situationship." },
     { "id": "t4_r2", "category": "roast", "intensity": 4, "weight": 4, "text": "{count}. Your phone is worried about you, and it is a phone." },
     { "id": "t4_r3", "category": "roast", "intensity": 4, "weight": 3, "text": "The app is not showing you content any more. It is just feeding you." },
     { "id": "t4_r4", "category": "roast", "intensity": 4, "weight": 3, "text": "You have been here so long the algorithm ran out of ideas and started repeating." },
-    { "id": "t4_r5", "category": "roast", "intensity": 4, "weight": 3, "text": "{count}. Genuinely — what were you even looking for?" },
+    { "id": "t4_r5", "category": "roast", "intensity": 4, "weight": 3, "text": "{count}. Genuinely — what were you even looking for, you freak." },
     { "id": "t4_r6", "category": "roast", "intensity": 4, "weight": 3, "text": "This stopped being a break from your day. This IS your day now." },
     { "id": "t4_r7", "category": "roast", "intensity": 4, "weight": 2, "text": "Your thumb has done a full workout. The rest of you has done nothing." },
 
@@ -310,6 +310,32 @@
     { "id": "t4_d17", "category": "pride", "intensity": 4, "weight": 4, "text": "You noticed. That is genuinely the hard part, and you just did it." },
     { "id": "t4_d18", "category": "pride", "intensity": 4, "weight": 3, "text": "{count}. Theek hai, chalo. Phone down, head up. That is the whole ask." },
     { "id": "t4_d19", "category": "pride", "intensity": 4, "weight": 3, "text": "Nobody is keeping score except this app, and it forgets every day." },
-    { "id": "t4_d20", "category": "pride", "intensity": 4, "weight": 4, "text": "{count}. Whatever this was really about, it is not on your phone." }
+    { "id": "t4_d20", "category": "pride", "intensity": 4, "weight": 4, "text": "{count}. Whatever this was really about, it is not on your phone." },
+    { "id": "t4_r50", "category": "roast", "intensity": 4, "weight": 4, "text": "{count}. Down bad for an algorithm. It will not kiss you back." },
+    { "id": "t4_r51", "category": "roast", "intensity": 4, "weight": 4, "text": "Goon-scrolling at {count}. There is no finish line, boss." },
+    { "id": "t4_r52", "category": "roast", "intensity": 4, "weight": 3, "text": "Horny for the next reel. It will not text you in the morning." },
+    { "id": "t4_r53", "category": "roast", "intensity": 4, "weight": 3, "text": "{count}. Freak behaviour. The For You page said yes. You said nothing." },
+    { "id": "t4_r54", "category": "roast", "intensity": 4, "weight": 4, "text": "You are edging your own attention span. Unclench the thumb, yaar." },
+    { "id": "t4_r55", "category": "roast", "intensity": 4, "weight": 3, "text": "{count}. Chutiya stamina, but only for strangers on mute." },
+    { "id": "t4_r56", "category": "roast", "intensity": 4, "weight": 3, "text": "Tharki for the FYP. It does not even know your name." },
+    { "id": "t4_r57", "category": "roast", "intensity": 4, "weight": 4, "text": "{count}. Main character in a crashout, extra in your own day." },
+    { "id": "t4_r58", "category": "roast", "intensity": 4, "weight": 3, "text": "This is bakchodi with a progress bar. You are winning bakchodi." },
+    { "id": "t4_r59", "category": "roast", "intensity": 4, "weight": 3, "text": "{count}. You said a quick look. Your thumb filed a different story." },
+    { "id": "t4_r60", "category": "roast", "intensity": 4, "weight": 4, "text": "Delulu that the next one fixes it. It will not. It never does." },
+    { "id": "t4_r61", "category": "roast", "intensity": 4, "weight": 3, "text": "Arre the feed is edging you and you are saying thank you." },
+    { "id": "t4_r62", "category": "roast", "intensity": 4, "weight": 3, "text": "{count}. No plot, no finish, just thumb. Legendary waste." },
+    { "id": "t4_r63", "category": "roast", "intensity": 4, "weight": 4, "text": "Bhai you are in a situationship with glass and it is using you." },
+    { "id": "t4_r64", "category": "roast", "intensity": 4, "weight": 3, "text": "{count}. The algorithm has you bent. Stand up, na." },
+    { "id": "t4_r65", "category": "roast", "intensity": 4, "weight": 3, "text": "You are not watching. You are getting railed by recommended." },
+    { "id": "t4_e29", "category": "existential", "intensity": 4, "weight": 4, "text": "{minutes} minutes of heat, zero memory. That is the whole trick." },
+    { "id": "t4_e30", "category": "existential", "intensity": 4, "weight": 3, "text": "{count} tiny hits. None of them were ever going to be enough." },
+    { "id": "t4_e31", "category": "existential", "intensity": 4, "weight": 3, "text": "You keep swiping like the ending is coming. It is not." },
+    { "id": "t4_e32", "category": "existential", "intensity": 4, "weight": 4, "text": "{count}. A whole evening, spent getting edged by ads." },
+    { "id": "t4_p24", "category": "reverse_psych", "intensity": 4, "weight": 3, "text": "Go on. One more. The FYP is already inside you anyway." },
+    { "id": "t4_p25", "category": "reverse_psych", "intensity": 4, "weight": 3, "text": "{count}. Commit, na. Half-assed doomscroll is embarrassing." },
+    { "id": "t4_p26", "category": "reverse_psych", "intensity": 4, "weight": 3, "text": "Keep going yaar. Touching grass is for people with a plot." },
+    { "id": "t4_d21", "category": "pride", "intensity": 4, "weight": 4, "text": "{count}. Closing it is still allowed. That is the whole flex." },
+    { "id": "t4_d22", "category": "pride", "intensity": 4, "weight": 3, "text": "You noticed you are down bad. Noticing is the exit, bhai." },
+    { "id": "t4_d23", "category": "pride", "intensity": 4, "weight": 3, "text": "Thumb off. Phone down. The FYP can miss you for once." }
   ]
 }

@@ -200,12 +200,13 @@ class GuiltSelectorTest {
         val selector = selector(history)
         val pool = pack.pool(GuiltSurface.AMBIENT, GuiltTier.EXTREME, locale)
 
-        // Every line shown, on a gradient: index 0 is the stalest (six days ago), the last was
-        // shown minutes ago. A gradient rather than "three stale, the rest today" because the
-        // fallback reaches for a SLICE of the pool, and a stale set smaller than that slice
-        // leaves fresh lines inside it — which the weighted draw then picks perfectly legally,
-        // failing this test a third of the time for no real defect.
-        history.seed(pool.mapIndexed { i, line -> line.id to t0 - (pool.size - i) * 8 * 60 * 60 * 1_000L }.toMap())
+        // Every line shown, on a gradient INSIDE the 7-day window — otherwise the oldest
+        // timestamps fall outside the no-repeat horizon, the pool is not actually exhausted,
+        // and this test starts asserting a different code path. Spacing is derived from pool
+        // size so growing T4 cannot silently walk the oldest lines out of the window again.
+        val spanMs = 6L * 24 * 60 * 60 * 1_000
+        val stepMs = spanMs / pool.size.coerceAtLeast(1)
+        history.seed(pool.mapIndexed { i, line -> line.id to t0 - (pool.size - i) * stepMs }.toMap())
 
         // Computed BEFORE the draw: drawing RECORDS, so afterwards the chosen line is the
         // freshest thing in the history and could never be in its own staler half.
